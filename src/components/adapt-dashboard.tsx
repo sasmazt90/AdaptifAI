@@ -44,9 +44,18 @@ const sampleCopy = {
   adapt: "[BOLD]Launch faster[/BOLD] with localized ads",
   resize: "Creative resized for every paid channel",
 };
+const pricingPacks = [
+  ["Starter", "250 credits", "$29", "Small campaign tests and quick localization checks."],
+  ["Studio", "900 credits", "$99", "Recurring paid social and display production."],
+  ["Scale", "3500 credits", "$249", "High-volume global creative operations."],
+] as const;
 
 function cleanCopy(value: string) {
   return value.replaceAll("[BOLD]", "").replaceAll("[/BOLD]", "");
+}
+
+function estimateCredits(fileCount: number, languageCount: number, placementCount: number) {
+  return Math.max(1, fileCount) * Math.max(1, languageCount) * Math.max(1, placementCount);
 }
 
 function overlaps(zone: Placement["safeZones"][number], box: { x: number; y: number; width: number; height: number }) {
@@ -226,7 +235,13 @@ function LandingPage({
   };
 
   return (
-    <main className="min-h-screen bg-[#faf9f5] text-[#151515]">
+    <main className="relative min-h-screen overflow-hidden bg-[#f6f3eb] text-[#151515]">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(21,21,21,0.045)_1px,transparent_1px),linear-gradient(0deg,rgba(21,21,21,0.035)_1px,transparent_1px)] bg-[size:44px_44px]" />
+        <div className="absolute left-[-8%] top-28 h-40 w-[120%] -skew-y-3 bg-[#7ee1c6]/18" />
+        <div className="absolute right-[-10%] top-[520px] h-52 w-[78%] skew-y-6 bg-[#ee4d6a]/12" />
+        <div className="absolute left-[8%] top-[650px] h-28 w-[36%] border-y border-[#151515]/10 bg-white/35" />
+      </div>
       <header className="sticky top-0 z-30 border-b border-[#151515]/10 bg-[#faf9f5]/95 backdrop-blur">
         <div className="mx-auto flex max-w-[1180px] items-center justify-between gap-4 px-5 py-4">
           <Brand />
@@ -237,7 +252,7 @@ function LandingPage({
         </div>
       </header>
 
-      <section className="border-b border-[#151515]/10">
+      <section className="relative border-b border-[#151515]/10">
         <div className="mx-auto grid max-w-[1180px] gap-10 px-5 py-14 lg:grid-cols-[1fr_420px] lg:items-center">
           <div>
             <p className="text-sm font-black uppercase text-[#0f766e]">AI creative localization for paid media</p>
@@ -254,7 +269,7 @@ function LandingPage({
         </div>
       </section>
 
-      <section className="mx-auto grid max-w-[1180px] gap-5 px-5 py-12 md:grid-cols-3">
+      <section className="relative mx-auto grid max-w-[1180px] gap-5 px-5 py-12 md:grid-cols-3">
         {[
           ["Marketing text only", "Detect headlines and CTAs while leaving ingredients, labels and product text untouched."],
           ["Layout-safe translation", "Preserve emphasis tags, fit translated copy into original bounds and flag platform safe-zone conflicts."],
@@ -267,7 +282,7 @@ function LandingPage({
         ))}
       </section>
 
-      <section className="border-y border-[#151515]/10 bg-white">
+      <section className="relative border-y border-[#151515]/10 bg-white/88 backdrop-blur">
         <div className="mx-auto grid max-w-[1180px] gap-10 px-5 py-12 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
           <div>
             <p className="text-sm font-black uppercase text-[#0f766e]">Workflow</p>
@@ -285,7 +300,7 @@ function LandingPage({
         </div>
       </section>
 
-      <section className="mx-auto max-w-[1180px] px-5 py-12">
+      <section className="relative mx-auto max-w-[1180px] px-5 py-12">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="text-sm font-black uppercase text-[#0f766e]">Pricing</p>
@@ -294,11 +309,7 @@ function LandingPage({
           <button type="button" onClick={() => chooseAuth("sign-up")} className="h-11 rounded-md bg-[#151515] px-5 font-semibold text-white">Create account</button>
         </div>
         <div className="mt-8 grid gap-4 md:grid-cols-3">
-          {[
-            ["Starter", "250 credits", "$19", "Small campaign tests and quick localization checks."],
-            ["Studio", "900 credits", "$49", "Recurring paid social and display production."],
-            ["Scale", "3500 credits", "$149", "High-volume global creative operations."],
-          ].map(([name, creditsLabel, price, body]) => (
+          {pricingPacks.map(([name, creditsLabel, price, body]) => (
             <div key={name} className="rounded-md border border-[#151515]/10 bg-white p-5">
               <p className="text-lg font-black">{name}</p>
               <p className="mt-4 text-4xl font-black">{price}</p>
@@ -309,7 +320,7 @@ function LandingPage({
         </div>
       </section>
 
-      <footer className="mx-auto flex max-w-[1180px] flex-wrap items-center justify-between gap-3 border-t border-[#151515]/10 px-5 py-5 text-xs text-[#666]">
+      <footer className="relative mx-auto flex max-w-[1180px] flex-wrap items-center justify-between gap-3 border-t border-[#151515]/10 px-5 py-5 text-xs text-[#666]">
         <span>Strictly stateless creative processing / temporary files auto-delete after 24h</span>
         <nav className="flex gap-4"><a href="/terms" className="hover:text-[#151515]">Terms</a><a href="/privacy" className="hover:text-[#151515]">Privacy GDPR/KVKK</a><a href="/refund" className="hover:text-[#151515]">Refund</a></nav>
       </footer>
@@ -442,6 +453,9 @@ export function AdaptDashboard() {
   const activePlacement = placements.find((p) => p.id === activePlacementId) ?? placements[0];
   const currentUserEmail = authUser?.email ?? userId;
   const isAdmin = currentUserEmail.toLowerCase() === (process.env.NEXT_PUBLIC_ADMIN_EMAIL ?? "tolgar@sasmaz.digital").toLowerCase();
+  const billableLanguages = mode === "adapt" ? selectedLanguages.length : 1;
+  const estimatedRunCredits = estimateCredits(files.length, billableLanguages, selectedPlacementIds.length);
+  const canRun = files.length > 0 && selectedPlacementIds.length > 0 && (mode !== "adapt" || selectedLanguages.length > 0) && credits >= estimatedRunCredits;
 
   useEffect(() => {
     if (!supabase) return;
@@ -493,6 +507,10 @@ export function AdaptDashboard() {
 
   const runProcess = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!canRun) {
+      setError(files.length === 0 ? "Upload at least one creative before running." : `This run needs ${estimatedRunCredits} credits. You have ${credits}.`);
+      return;
+    }
     setIsRunning(true);
     setError(null);
     setResult(null);
@@ -626,7 +644,17 @@ export function AdaptDashboard() {
           <section className="rounded-md border border-[#151515]/10 bg-white p-4">
             <div className="flex items-start justify-between gap-3">
               <div><p className="text-xs font-semibold uppercase text-[#0f766e]">{mode} workspace</p><h1 className="text-xl font-semibold">{mode === "adapt" ? "Translate and restore" : "Resize placements"}</h1></div>
-              <button type="submit" disabled={isRunning || selectedPlacementIds.length === 0 || (mode === "adapt" && selectedLanguages.length === 0)} className="flex h-10 min-w-28 items-center justify-center gap-2 rounded-md bg-[#ee4d6a] px-3 text-sm font-semibold text-white disabled:bg-[#d6d0c4]">{isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}Run</button>
+              <button type="submit" disabled={isRunning || !canRun} className="flex h-10 min-w-28 items-center justify-center gap-2 rounded-md bg-[#ee4d6a] px-3 text-sm font-semibold text-white disabled:bg-[#d6d0c4]">{isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}Run</button>
+            </div>
+            <div className="mt-4 rounded-md border border-[#151515]/10 bg-[#faf9f5] p-3 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-semibold">Estimated run cost</span>
+                <span className={["font-black", credits < estimatedRunCredits ? "text-[#b42318]" : "text-[#0f766e]"].join(" ")}>{estimatedRunCredits} credits</span>
+              </div>
+              <p className="mt-1 text-xs text-[#666]">
+                {mode === "adapt" ? `${Math.max(1, files.length)} file x ${Math.max(1, selectedLanguages.length)} language x ${Math.max(1, selectedPlacementIds.length)} placement` : `${Math.max(1, files.length)} file x ${Math.max(1, selectedPlacementIds.length)} placement`}
+              </p>
+              {credits < estimatedRunCredits && <p className="mt-2 text-xs font-semibold text-[#b42318]">Add credits before starting this run.</p>}
             </div>
           </section>
 
@@ -712,7 +740,7 @@ export function AdaptDashboard() {
 
           <section className="rounded-md border border-[#151515]/10 bg-white p-4">
             <h2 className="mb-3 font-semibold">Selection Summary</h2>
-            <div className="space-y-2 text-sm">{[["Mode", mode], ["Placements", selectedPlacementIds.length], ["Preview", device], ["Output", selectedFormat]].map(([label, value]) => <div key={String(label)} className="flex justify-between rounded-md bg-[#faf9f5] px-3 py-2"><span>{label}</span><span className="font-semibold capitalize">{value}</span></div>)}</div>
+            <div className="space-y-2 text-sm">{[["Mode", mode], ["Files", files.length], ["Languages", billableLanguages], ["Placements", selectedPlacementIds.length], ["Preview", device], ["Output", selectedFormat], ["Run cost", `${estimatedRunCredits} credits`]].map(([label, value]) => <div key={String(label)} className="flex justify-between rounded-md bg-[#faf9f5] px-3 py-2"><span>{label}</span><span className="font-semibold capitalize">{value}</span></div>)}</div>
           </section>
         </aside>
       </form>
