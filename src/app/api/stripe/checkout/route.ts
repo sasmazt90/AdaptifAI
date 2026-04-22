@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedEmail } from "@/lib/auth";
 import { creditPacks, CreditPackId, getStripe } from "@/lib/stripe";
 
+function cleanOrigin(value: string | null | undefined) {
+  const candidate = (value ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").trim().replace(/^"|"$/g, "");
+  return new URL(candidate).origin;
+}
+
 async function createCheckoutSessionWithRest({
   origin,
   priceId,
@@ -53,7 +58,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unknown credit pack." }, { status: 400 });
     }
 
-    const origin = request.headers.get("origin") ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+    const origin = cleanOrigin(request.headers.get("origin"));
     const configuredPriceId = process.env[pack.envPriceKey];
     if (!configuredPriceId) {
       return NextResponse.json({ error: `${pack.envPriceKey} is not configured.` }, { status: 500 });
