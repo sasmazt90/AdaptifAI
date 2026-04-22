@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
       ? await response.json()
       : { error: `Backend returned ${response.status}`, detail: await response.text() };
     if (response.ok) {
-      const spend = spendCredits(userId, Number(payload.credits_estimated ?? 0));
+      const spend = await spendCredits(userId, Number(payload.credits_estimated ?? 0));
       if (!spend.ok) {
         return NextResponse.json({ error: "Insufficient credits.", credits: spend.credits }, { status: 402 });
       }

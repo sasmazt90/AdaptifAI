@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
       const session = event.data.object;
       const credits = Number(session.metadata?.credits ?? 0);
       const userId = session.metadata?.user_id || session.customer_email || String(session.customer ?? "guest");
-      const balance = addCredits(userId, credits, session.id);
+      const balance = await addCredits(userId, credits, session.id, "stripe", "stripe_checkout");
       console.info("Credit purchase completed", {
         session: session.id,
         credits,

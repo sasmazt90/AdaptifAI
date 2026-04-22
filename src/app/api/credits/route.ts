@@ -6,16 +6,16 @@ export async function GET(request: Request) {
   const userId = normalizeUserId(url.searchParams.get("user_id"));
   return NextResponse.json({
     user_id: userId,
-    credits: getCredits(userId),
+    credits: await getCredits(userId),
     currency: "credits",
     stateless: true,
-    source: "local_credit_ledger",
+    source: process.env.NEXT_PUBLIC_SUPABASE_URL ? "supabase_credit_ledger" : "local_credit_ledger",
   });
 }
 
 export async function POST(request: Request) {
   const body = (await request.json()) as { user_id?: string; credits?: number };
   const userId = normalizeUserId(body.user_id);
-  const credits = addCredits(userId, Math.max(0, Number(body.credits ?? 0)));
+  const credits = await addCredits(userId, Math.max(0, Number(body.credits ?? 0)), undefined, "system", "legacy_credit_add");
   return NextResponse.json({ user_id: userId, credits });
 }

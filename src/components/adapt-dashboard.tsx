@@ -12,13 +12,18 @@ import {
   FileArchive,
   Languages,
   Loader2,
+  LogIn,
+  LogOut,
   Move,
+  Shield,
   Sparkles,
   Type,
   User,
 } from "lucide-react";
+import type { User as SupabaseUser } from "@supabase/supabase-js";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { languages, outputFormats, Placement, placements } from "@/lib/placements";
+import { getSupabaseBrowser, hasSupabaseBrowserConfig } from "@/lib/supabase-client";
 
 type PipelineResult = {
   job_id: string;
@@ -139,6 +144,8 @@ function DevicePreview({ placement, overrideText, layerX, layerY, maskOpacity }:
 }
 
 export function AdaptDashboard() {
+  const supabase = useMemo(() => getSupabaseBrowser(), []);
+  const supabaseConfigured = hasSupabaseBrowserConfig();
   const [selectedPlacementIds, setSelectedPlacementIds] = useState<string[]>(["meta-stories", "tiktok-in-feed", "gdn-300x250"]);
   const [activePlacementId, setActivePlacementId] = useState("meta-stories");
   const [selectedLanguages, setSelectedLanguages] = useState<string[]>(["DE", "TR", "AR"]);
@@ -148,6 +155,18 @@ export function AdaptDashboard() {
   const [userId, setUserId] = useState(() =>
     typeof window === "undefined" ? "guest@adaptif.ai" : window.localStorage.getItem("adaptifai:user") || "guest@adaptif.ai",
   );
+  const [authUser, setAuthUser] = useState<SupabaseUser | null>(null);
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authMode, setAuthMode] = useState<"sign-in" | "sign-up">("sign-in");
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authReady, setAuthReady] = useState(!supabaseConfigured);
+  const [adminTargetEmail, setAdminTargetEmail] = useState("");
+  const [adminAmount, setAdminAmount] = useState(100);
+  const [adminAction, setAdminAction] = useState<"add" | "deduct">("add");
+  const [adminStatus, setAdminStatus] = useState<string | null>(null);
+  const [isAdminUpdating, setIsAdminUpdating] = useState(false);
   const [overrideText, setOverrideText] = useState("[BOLD]Launch faster[/BOLD] with localized ads");
   const [layerX, setLayerX] = useState(0);
   const [layerY, setLayerY] = useState(0);
@@ -158,18 +177,44 @@ export function AdaptDashboard() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const activePlacement = placements.find((placement) => placement.id === activePlacementId) ?? placements[0];
+  const currentUserEmail = authUser?.email ?? userId;
+  const isAdmin = currentUserEmail.toLowerCase() === (process.env.NEXT_PUBLIC_ADMIN_EMAIL ?? "tolgar@sasmaz.digital").toLowerCase();
   const groupedPlacements = useMemo(
     () => platformOrder.map((platform) => [platform, placements.filter((placement) => placement.platform === platform)] as const),
     [],
   );
 
   useEffect(() => {
-    window.localStorage.setItem("adaptifai:user", userId);
-    fetch(`/api/credits?user_id=${encodeURIComponent(userId)}`)
+    if (!supabase) return;
+    let mounted = true;
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return;
+      setAuthUser(data.session?.user ?? null);
+      setSessionToken(data.session?.access_token ?? null);
+      if (data.session?.user.email) setUserId(data.session.user.email);
+      setAuthReady(true);
+    });
+
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAuthUser(session?.user ?? null);
+      setSessionToken(session?.access_token ?? null);
+      if (session?.user.email) setUserId(session.user.email);
+    });
+
+    return () => {
+      mounted = false;
+      data.subscription.unsubscribe();
+    };
+  }, [supabase]);
+
+  useEffect(() => {
+    window.localStorage.setItem("adaptifai:user", currentUserEmail);
+    fetch(`/api/credits?user_id=${encodeURIComponent(currentUserEmail)}`)
       .then((response) => response.json())
       .then((payload) => setCredits(Number(payload.credits ?? 0)))
       .catch(() => undefined);
-  }, [userId]);
+  }, [currentUserEmail]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -196,7 +241,7 @@ export function AdaptDashboard() {
 
     const formData = new FormData();
     files.forEach((file) => formData.append("files", file));
-    formData.append("user_id", userId);
+    formData.append("user_id", currentUserEmail);
     formData.append("target_languages", selectedLanguages.join(","));
     formData.append("output_format", selectedFormat);
     formData.append("placements", selectedPlacementIds.join(","));
@@ -218,12 +263,94 @@ export function AdaptDashboard() {
     const response = await fetch("/api/stripe/checkout", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ pack: "starter", user_id: userId }),
+      body: JSON.stringify({ pack: "starter", user_id: currentUserEmail }),
     });
     const payload = await response.json();
     if (payload.url) window.location.href = payload.url;
     else setError(payload.error ?? "Stripe Checkout is not configured yet.");
   };
+
+  const submitAuth = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!supabase) return;
+    setAuthError(null);
+    const authCall = authMode === "sign-up" ? supabase.auth.signUp : supabase.auth.signInWithPassword;
+    const { data, error } = await authCall.bind(supabase.auth)({ email: authEmail, password: authPassword });
+    if (error) {
+      setAuthError(error.message);
+      return;
+    }
+    if (data.user?.email) setUserId(data.user.email);
+    if (authMode === "sign-up" && !data.session) {
+      setAuthError("Check your email to confirm the account, then sign in.");
+    }
+  };
+
+  const signOut = async () => {
+    await supabase?.auth.signOut();
+    setAuthUser(null);
+    setSessionToken(null);
+  };
+
+  const adjustCredits = async () => {
+    setIsAdminUpdating(true);
+    setAdminStatus(null);
+    try {
+      const response = await fetch("/api/admin/credits", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${sessionToken}`,
+        },
+        body: JSON.stringify({ user_id: adminTargetEmail, amount: adminAmount, action: adminAction }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error ?? "Unable to adjust credits.");
+      setAdminStatus(`${payload.user_id} balance: ${payload.credits} credits`);
+      if (payload.user_id === currentUserEmail.toLowerCase()) setCredits(Number(payload.credits));
+    } catch (caught) {
+      setAdminStatus(caught instanceof Error ? caught.message : "Unable to adjust credits.");
+    } finally {
+      setIsAdminUpdating(false);
+    }
+  };
+
+  if (!authReady) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-[#faf9f5] text-[#151515]">
+        <Loader2 className="h-7 w-7 animate-spin text-[#0f766e]" />
+      </main>
+    );
+  }
+
+  if (supabaseConfigured && !authUser) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-[#faf9f5] px-5 text-[#151515]">
+        <form onSubmit={submitAuth} className="w-full max-w-sm rounded-md border border-[#151515]/10 bg-white p-6 shadow-sm">
+          <p className="text-xs font-semibold uppercase text-[#0f766e]">AdaptifAI</p>
+          <h1 className="mt-1 text-2xl font-semibold">{authMode === "sign-in" ? "Sign in" : "Create account"}</h1>
+          <div className="mt-5 space-y-3">
+            <label className="block text-sm font-semibold">
+              Email
+              <input className="mt-1 h-11 w-full rounded-md border border-[#151515]/15 px-3 outline-none focus:border-[#0f766e]" type="email" value={authEmail} onChange={(event) => setAuthEmail(event.target.value)} required />
+            </label>
+            <label className="block text-sm font-semibold">
+              Password
+              <input className="mt-1 h-11 w-full rounded-md border border-[#151515]/15 px-3 outline-none focus:border-[#0f766e]" type="password" value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} required minLength={6} />
+            </label>
+          </div>
+          {authError && <p className="mt-3 rounded-md bg-[#fff0d8] p-3 text-sm text-[#6b3b00]">{authError}</p>}
+          <button type="submit" className="mt-5 flex h-11 w-full items-center justify-center gap-2 rounded-md bg-[#151515] font-semibold text-white">
+            <LogIn className="h-4 w-4" />
+            {authMode === "sign-in" ? "Sign in" : "Sign up"}
+          </button>
+          <button type="button" onClick={() => setAuthMode(authMode === "sign-in" ? "sign-up" : "sign-in")} className="mt-3 w-full text-sm font-semibold text-[#0f766e]">
+            {authMode === "sign-in" ? "Need an account? Sign up" : "Already have an account? Sign in"}
+          </button>
+        </form>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-[#faf9f5] text-[#151515]">
@@ -238,7 +365,8 @@ export function AdaptDashboard() {
               <User className="h-4 w-4 text-[#0f766e]" />
               <input
                 className="w-44 bg-transparent outline-none"
-                value={userId}
+                value={currentUserEmail}
+                readOnly={supabaseConfigured}
                 onChange={(event) => setUserId(event.target.value)}
                 aria-label="Account email"
               />
@@ -255,12 +383,47 @@ export function AdaptDashboard() {
               <CreditCard className="h-4 w-4" />
               Buy credits
             </button>
+            {supabaseConfigured && (
+              <button type="button" onClick={signOut} className="flex h-10 items-center gap-2 rounded-md border border-[#151515]/15 bg-white px-3 text-sm font-semibold">
+                <LogOut className="h-4 w-4 text-[#0f766e]" />
+                Sign out
+              </button>
+            )}
           </div>
         </div>
       </header>
 
       <form onSubmit={runAdapt} className="mx-auto grid max-w-[1500px] gap-4 px-5 py-5 xl:grid-cols-[360px_minmax(520px,1fr)_360px]">
         <aside className="space-y-4">
+          {isAdmin && (
+            <section className="rounded-md border border-[#151515]/10 bg-white p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="font-semibold">Admin Credits</h2>
+                <Shield className="h-4 w-4 text-[#0f766e]" />
+              </div>
+              <label className="block text-sm font-semibold">
+                User email
+                <input className="mt-1 h-10 w-full rounded-md border border-[#151515]/10 bg-[#faf9f5] px-3 outline-none focus:border-[#0f766e]" type="email" value={adminTargetEmail} onChange={(event) => setAdminTargetEmail(event.target.value)} />
+              </label>
+              <label className="mt-3 block text-sm font-semibold">
+                Credits
+                <input className="mt-1 h-10 w-full rounded-md border border-[#151515]/10 bg-[#faf9f5] px-3 outline-none focus:border-[#0f766e]" type="number" min="1" value={adminAmount} onChange={(event) => setAdminAmount(Number(event.target.value))} />
+              </label>
+              <div className="mt-3 grid grid-cols-2 gap-1 rounded-md bg-[#f1eee6] p-1">
+                {(["add", "deduct"] as const).map((action) => (
+                  <button key={action} type="button" onClick={() => setAdminAction(action)} className={["h-9 rounded text-xs font-semibold capitalize", adminAction === action ? "bg-[#151515] text-white" : "text-[#555555] hover:bg-white"].join(" ")}>
+                    {action}
+                  </button>
+                ))}
+              </div>
+              <button type="button" onClick={adjustCredits} disabled={isAdminUpdating} className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-md bg-[#0f766e] text-sm font-semibold text-white disabled:bg-[#d6d0c4]">
+                {isAdminUpdating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Shield className="h-4 w-4" />}
+                Apply credit change
+              </button>
+              {adminStatus && <p className="mt-3 rounded-md bg-[#e8f7f1] p-3 text-sm text-[#064e46]">{adminStatus}</p>}
+            </section>
+          )}
+
           <section className="rounded-md border border-[#151515]/10 bg-white p-4">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="font-semibold">Inputs</h2>
