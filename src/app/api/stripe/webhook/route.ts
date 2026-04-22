@@ -1,18 +1,19 @@
 import { headers } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
-import { getStripe } from "@/lib/stripe";
+import { getStripe, getStripeEnv } from "@/lib/stripe";
 import { addCredits } from "@/lib/credits";
 
 export async function POST(request: NextRequest) {
   const payload = await request.text();
   const signature = (await headers()).get("stripe-signature");
 
-  if (!signature || !process.env.STRIPE_WEBHOOK_SECRET) {
+  const webhookSecret = getStripeEnv("STRIPE_WEBHOOK_SECRET");
+  if (!signature || !webhookSecret) {
     return NextResponse.json({ error: "Stripe webhook signing secret is not configured." }, { status: 400 });
   }
 
   try {
-    const event = getStripe().webhooks.constructEvent(payload, signature, process.env.STRIPE_WEBHOOK_SECRET);
+    const event = getStripe().webhooks.constructEvent(payload, signature, webhookSecret);
 
     if (event.type === "checkout.session.completed") {
       const session = event.data.object;

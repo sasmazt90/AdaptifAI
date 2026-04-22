@@ -3,12 +3,13 @@ import Stripe from "stripe";
 let stripeClient: Stripe | null = null;
 
 export function getStripe() {
-  if (!process.env.STRIPE_SECRET_KEY) {
+  const secretKey = process.env.STRIPE_SECRET_KEY?.trim();
+  if (!secretKey) {
     throw new Error("STRIPE_SECRET_KEY is not configured.");
   }
 
   if (!stripeClient) {
-    stripeClient = new Stripe(process.env.STRIPE_SECRET_KEY, {
+    stripeClient = new Stripe(secretKey, {
       apiVersion: "2026-03-25.dahlia",
       appInfo: {
         name: "AdaptifAI",
@@ -18,6 +19,10 @@ export function getStripe() {
   }
 
   return stripeClient;
+}
+
+export function getStripeEnv(key: string) {
+  return process.env[key]?.trim();
 }
 
 export const creditPacks = {

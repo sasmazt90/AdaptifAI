@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedEmail } from "@/lib/auth";
-import { creditPacks, CreditPackId, getStripe } from "@/lib/stripe";
+import { creditPacks, CreditPackId, getStripe, getStripeEnv } from "@/lib/stripe";
 
 function cleanOrigin(value: string | null | undefined) {
   const candidate = (value ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").trim().replace(/^"|"$/g, "");
@@ -20,7 +20,8 @@ async function createCheckoutSessionWithRest({
   packId: CreditPackId;
   userId: string;
 }) {
-  if (!process.env.STRIPE_SECRET_KEY) throw new Error("Stripe secret key is not configured.");
+  const secretKey = getStripeEnv("STRIPE_SECRET_KEY");
+  if (!secretKey) throw new Error("Stripe secret key is not configured.");
 
   const body = new URLSearchParams({
     mode: "payment",
@@ -37,7 +38,7 @@ async function createCheckoutSessionWithRest({
   const response = await fetch("https://api.stripe.com/v1/checkout/sessions", {
     method: "POST",
     headers: {
-      authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`,
+      authorization: `Bearer ${secretKey}`,
       "content-type": "application/x-www-form-urlencoded",
     },
     body,
@@ -59,7 +60,7 @@ export async function POST(request: NextRequest) {
     }
 
     const origin = cleanOrigin(request.headers.get("origin"));
-    const configuredPriceId = process.env[pack.envPriceKey];
+    const configuredPriceId = getStripeEnv(pack.envPriceKey);
     if (!configuredPriceId) {
       return NextResponse.json({ error: `${pack.envPriceKey} is not configured.` }, { status: 500 });
     }
