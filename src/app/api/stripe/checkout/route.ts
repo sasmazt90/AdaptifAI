@@ -42,14 +42,6 @@ async function createCheckoutSessionWithRest({
   return payload as { url?: string };
 }
 
-function paymentLinkForUser(paymentLink: string, userId: string) {
-  const url = new URL(paymentLink);
-  if (userId.includes("@")) url.searchParams.set("prefilled_email", userId);
-  const reference = Buffer.from(userId, "utf8").toString("base64url");
-  url.searchParams.set("client_reference_id", `u_${reference}`.slice(0, 200));
-  return url.toString();
-}
-
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as { pack?: CreditPackId; user_id?: string };
@@ -61,13 +53,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unknown credit pack." }, { status: 400 });
     }
 
-    const paymentLink = process.env[pack.envPaymentLinkKey];
-    if (!process.env.STRIPE_SECRET_KEY && paymentLink) {
-      return NextResponse.json({ url: paymentLinkForUser(paymentLink, userId), mode: "payment_link" });
-    }
-
     const origin = request.headers.get("origin") ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
     const configuredPriceId = process.env[pack.envPriceKey];
+    if (!configuredPriceId) {
+      return NextResponse.json({ error: `${pack.envPriceKey} is not configured.` }, { status: 500 });
+    }
+
     let session: { url?: string | null };
     try {
       const stripe = getStripe();
@@ -75,21 +66,7 @@ export async function POST(request: NextRequest) {
         mode: "payment",
         success_url: `${origin}?checkout=success&credits=${pack.credits}`,
         cancel_url: `${origin}?checkout=cancelled`,
-        line_items: configuredPriceId
-          ? [{ quantity: 1, price: configuredPriceId }]
-          : [
-              {
-                quantity: 1,
-                price_data: {
-                  currency: "usd",
-                  unit_amount: pack.amount,
-                  product_data: {
-                    name: pack.name,
-                    metadata: { credits: String(pack.credits) },
-                  },
-                },
-              },
-            ],
+        line_items: [{ quantity: 1, price: configuredPriceId }],
         metadata: {
           credits: String(pack.credits),
           pack: packId,
@@ -98,18 +75,14 @@ export async function POST(request: NextRequest) {
         customer_email: userId.includes("@") ? userId : undefined,
       });
     } catch {
-      try {
-        if (!configuredPriceId) throw new Error("Stripe price is not configured.");
-        session = await createCheckoutSessionWithRest({ origin, priceId: configuredPriceId, pack, packId, userId });
-      } catch {
-        if (paymentLink) {
-          return NextResponse.json({ url: paymentLinkForUser(paymentLink, userId), mode: "payment_link_fallback" });
-        }
-        throw new Error("Unable to create Stripe Checkout Session.");
-      }
+      session = await createCheckoutSessionWithRest({ origin, priceId: configuredPriceId, pack, packId, userId });
     }
 
-    return NextResponse.json({ url: session.url });
+    if (!session.url) {
+      return NextResponse.json({ error: "Stripe Checkout Session did not return a URL." }, { status: 502 });
+    }
+
+    return NextResponse.json({ url: session.url, mode: "checkout_session" });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to create Stripe Checkout Session.";
     return NextResponse.json({ error: message }, { status: message === "Authentication required." ? 401 : 500 });
