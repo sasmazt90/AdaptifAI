@@ -210,10 +210,11 @@ export function AdaptDashboard() {
   }, [supabase]);
 
   useEffect(() => {
+    if (supabaseConfigured && !sessionToken) return;
     window.localStorage.setItem("adaptifai:user", currentUserEmail);
     fetch(`/api/credits?user_id=${encodeURIComponent(currentUserEmail)}`, { headers: sessionToken ? { authorization: `Bearer ${sessionToken}` } : undefined })
       .then((r) => r.json()).then((p) => setCredits(Number(p.credits ?? 0))).catch(() => undefined);
-  }, [currentUserEmail, sessionToken]);
+  }, [currentUserEmail, sessionToken, supabaseConfigured]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -337,8 +338,8 @@ export function AdaptDashboard() {
           <Brand />
           <h1 className="mt-6 text-2xl font-semibold">{authMode === "sign-in" ? "Sign in" : "Create account"}</h1>
           <div className="mt-5 space-y-3">
-            <label className="block text-sm font-semibold">Email<input className="mt-1 h-11 w-full rounded-md border border-[#151515]/15 px-3 outline-none focus:border-[#0f766e]" type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} required /></label>
-            <label className="block text-sm font-semibold">Password<input className="mt-1 h-11 w-full rounded-md border border-[#151515]/15 px-3 outline-none focus:border-[#0f766e]" type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} required minLength={6} /></label>
+            <label className="block text-sm font-semibold">Email<input className="mt-1 h-11 w-full rounded-md border border-[#151515]/15 px-3 outline-none focus:border-[#0f766e]" type="email" autoComplete="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} required /></label>
+            <label className="block text-sm font-semibold">Password<input className="mt-1 h-11 w-full rounded-md border border-[#151515]/15 px-3 outline-none focus:border-[#0f766e]" type="password" autoComplete={authMode === "sign-in" ? "current-password" : "new-password"} value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} required minLength={6} /></label>
           </div>
           {authError && <p className="mt-3 rounded-md bg-[#fff0d8] p-3 text-sm text-[#6b3b00]">{authError}</p>}
           <button type="submit" className="mt-5 flex h-11 w-full items-center justify-center gap-2 rounded-md bg-[#151515] font-semibold text-white"><LogIn className="h-4 w-4" />{authMode === "sign-in" ? "Sign in" : "Sign up"}</button>
