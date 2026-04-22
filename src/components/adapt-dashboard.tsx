@@ -2,6 +2,7 @@
 
 import {
   AlertTriangle,
+  ArrowRight,
   Check,
   ChevronDown,
   CloudUpload,
@@ -28,6 +29,8 @@ import { languages, outputFormats, Placement, placements } from "@/lib/placement
 import { getSupabaseBrowser, hasSupabaseBrowserConfig } from "@/lib/supabase-client";
 
 type Mode = "adapt" | "resize";
+type AuthMode = "sign-in" | "sign-up";
+type ConsentChoice = "necessary" | "all" | null;
 type Device = "mobile" | "desktop";
 type FitMode = "contain" | "cover" | "fill";
 type PipelineResult = {
@@ -79,6 +82,242 @@ function Collapsible({ title, icon, children, defaultOpen = true }: { title: str
   );
 }
 
+function ConsentBanner() {
+  const [choice, setChoice] = useState<ConsentChoice>(null);
+  const [ready, setReady] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
+  const storageKey = "adaptifai:consent:v1";
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      const saved = window.localStorage.getItem(storageKey);
+      setChoice(saved === "all" || saved === "necessary" ? saved : null);
+      setReady(true);
+    });
+  }, []);
+
+  const saveChoice = (nextChoice: Exclude<ConsentChoice, null>) => {
+    window.localStorage.setItem(storageKey, nextChoice);
+    setChoice(nextChoice);
+    setShowDetails(false);
+  };
+
+  if (!ready) return null;
+  if (choice) {
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          setChoice(null);
+          setShowDetails(true);
+        }}
+        className="fixed bottom-4 left-4 z-50 rounded-md border border-[#151515]/10 bg-white px-3 py-2 text-xs font-semibold text-[#151515] shadow-lg"
+      >
+        Privacy settings
+      </button>
+    );
+  }
+
+  return (
+    <div className="fixed inset-x-4 bottom-4 z-50 mx-auto max-w-4xl rounded-md border border-[#151515]/10 bg-white p-4 text-[#151515] shadow-2xl">
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div>
+          <p className="text-sm font-black">Privacy and consent</p>
+          <p className="mt-1 max-w-2xl text-sm text-[#555]">
+            We use required cookies/storage for sign-in, credits, security and the editor. Optional analytics help improve the product and can be refused.
+          </p>
+          {showDetails && (
+            <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+              <div className="rounded-md bg-[#faf9f5] p-3">
+                <p className="font-bold">Necessary</p>
+                <p className="mt-1 text-[#666]">Authentication session, credit balance, consent choice and security logs. Always active.</p>
+              </div>
+              <div className="rounded-md bg-[#faf9f5] p-3">
+                <p className="font-bold">Analytics</p>
+                <p className="mt-1 text-[#666]">Anonymous usage signals for product improvement. No ad tracking is loaded by default.</p>
+              </div>
+            </div>
+          )}
+          <div className="mt-2 flex gap-3 text-xs font-semibold">
+            <a href="/privacy" className="text-[#0f766e] hover:text-[#151515]">Privacy GDPR/KVKK</a>
+            <a href="/terms" className="text-[#0f766e] hover:text-[#151515]">Terms</a>
+          </div>
+        </div>
+        <div className="grid shrink-0 gap-2 sm:grid-cols-3 md:grid-cols-1">
+          <button type="button" onClick={() => saveChoice("necessary")} className="h-10 rounded-md border border-[#151515]/15 px-4 text-sm font-semibold">Necessary only</button>
+          <button type="button" onClick={() => saveChoice("all")} className="h-10 rounded-md bg-[#151515] px-4 text-sm font-semibold text-white">Accept all</button>
+          <button type="button" onClick={() => setShowDetails((value) => !value)} className="h-10 rounded-md bg-[#e8f7f1] px-4 text-sm font-semibold text-[#064e46]">Manage</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AuthPanel({
+  authMode,
+  setAuthMode,
+  authEmail,
+  setAuthEmail,
+  authPassword,
+  setAuthPassword,
+  authError,
+  authPending,
+  submitAuth,
+}: {
+  authMode: AuthMode;
+  setAuthMode: (mode: AuthMode) => void;
+  authEmail: string;
+  setAuthEmail: (value: string) => void;
+  authPassword: string;
+  setAuthPassword: (value: string) => void;
+  authError: string | null;
+  authPending: boolean;
+  submitAuth: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <form id="auth" onSubmit={submitAuth} className="rounded-md border border-[#151515]/10 bg-white p-5 shadow-sm">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase text-[#0f766e]">{authMode === "sign-in" ? "Welcome back" : "Start free"}</p>
+          <h2 className="text-2xl font-semibold">{authMode === "sign-in" ? "Sign in" : "Create account"}</h2>
+        </div>
+        <LogIn className="h-5 w-5 text-[#0f766e]" />
+      </div>
+      <div className="mt-5 space-y-3">
+        <label className="block text-sm font-semibold">Email<input className="mt-1 h-11 w-full rounded-md border border-[#151515]/15 px-3 outline-none focus:border-[#0f766e]" type="email" autoComplete="email" value={authEmail} onChange={(event) => setAuthEmail(event.target.value)} required /></label>
+        <label className="block text-sm font-semibold">Password<input className="mt-1 h-11 w-full rounded-md border border-[#151515]/15 px-3 outline-none focus:border-[#0f766e]" type="password" autoComplete={authMode === "sign-in" ? "current-password" : "new-password"} value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} required minLength={6} /></label>
+      </div>
+      {authError && <p className="mt-3 rounded-md bg-[#fff0d8] p-3 text-sm text-[#6b3b00]">{authError}</p>}
+      <button type="submit" disabled={authPending} className="mt-5 flex h-11 w-full items-center justify-center gap-2 rounded-md bg-[#151515] font-semibold text-white disabled:bg-[#d6d0c4]">
+        {authPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
+        {authMode === "sign-in" ? "Sign in" : "Sign up and enter app"}
+      </button>
+      <button type="button" onClick={() => setAuthMode(authMode === "sign-in" ? "sign-up" : "sign-in")} className="mt-3 w-full text-sm font-semibold text-[#0f766e]">
+        {authMode === "sign-in" ? "Need an account? Sign up" : "Already have an account? Sign in"}
+      </button>
+    </form>
+  );
+}
+
+function LandingPage({
+  authMode,
+  setAuthMode,
+  authEmail,
+  setAuthEmail,
+  authPassword,
+  setAuthPassword,
+  authError,
+  authPending,
+  submitAuth,
+}: {
+  authMode: AuthMode;
+  setAuthMode: (mode: AuthMode) => void;
+  authEmail: string;
+  setAuthEmail: (value: string) => void;
+  authPassword: string;
+  setAuthPassword: (value: string) => void;
+  authError: string | null;
+  authPending: boolean;
+  submitAuth: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  const chooseAuth = (mode: AuthMode) => {
+    setAuthMode(mode);
+    document.getElementById("auth")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+
+  return (
+    <main className="min-h-screen bg-[#faf9f5] text-[#151515]">
+      <header className="sticky top-0 z-30 border-b border-[#151515]/10 bg-[#faf9f5]/95 backdrop-blur">
+        <div className="mx-auto flex max-w-[1180px] items-center justify-between gap-4 px-5 py-4">
+          <Brand />
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => chooseAuth("sign-in")} className="h-10 rounded-md border border-[#151515]/15 bg-white px-4 text-sm font-semibold">Sign In</button>
+            <button type="button" onClick={() => chooseAuth("sign-up")} className="h-10 rounded-md bg-[#151515] px-4 text-sm font-semibold text-white">Sign Up</button>
+          </div>
+        </div>
+      </header>
+
+      <section className="border-b border-[#151515]/10">
+        <div className="mx-auto grid max-w-[1180px] gap-10 px-5 py-14 lg:grid-cols-[1fr_420px] lg:items-center">
+          <div>
+            <p className="text-sm font-black uppercase text-[#0f766e]">AI creative localization for paid media</p>
+            <h1 className="mt-4 max-w-3xl text-5xl font-black leading-[1.02] tracking-normal md:text-7xl">AdaptifAI turns one ad into launch-ready global variants.</h1>
+            <p className="mt-6 max-w-2xl text-lg leading-8 text-[#4f4f4f]">
+              Extract campaign copy, translate it contextually, remove source text from the background, and preview exact Meta, TikTok, Google, LinkedIn and native placements before export.
+            </p>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <button type="button" onClick={() => chooseAuth("sign-up")} className="flex h-12 items-center gap-2 rounded-md bg-[#ee4d6a] px-5 font-semibold text-white">Start localizing <ArrowRight className="h-4 w-4" /></button>
+              <button type="button" onClick={() => chooseAuth("sign-in")} className="h-12 rounded-md border border-[#151515]/15 bg-white px-5 font-semibold">Open workspace</button>
+            </div>
+          </div>
+          <AuthPanel authMode={authMode} setAuthMode={setAuthMode} authEmail={authEmail} setAuthEmail={setAuthEmail} authPassword={authPassword} setAuthPassword={setAuthPassword} authError={authError} authPending={authPending} submitAuth={submitAuth} />
+        </div>
+      </section>
+
+      <section className="mx-auto grid max-w-[1180px] gap-5 px-5 py-12 md:grid-cols-3">
+        {[
+          ["Marketing text only", "Detect headlines and CTAs while leaving ingredients, labels and product text untouched."],
+          ["Layout-safe translation", "Preserve emphasis tags, fit translated copy into original bounds and flag platform safe-zone conflicts."],
+          ["Export for every channel", "Generate original, PNG, JPG, WebP or PDF outputs across paid social, display and native placements."],
+        ].map(([title, body]) => (
+          <div key={title} className="border-t border-[#151515]/15 pt-5">
+            <p className="text-lg font-black">{title}</p>
+            <p className="mt-2 text-sm leading-6 text-[#555]">{body}</p>
+          </div>
+        ))}
+      </section>
+
+      <section className="border-y border-[#151515]/10 bg-white">
+        <div className="mx-auto grid max-w-[1180px] gap-10 px-5 py-12 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
+          <div>
+            <p className="text-sm font-black uppercase text-[#0f766e]">Workflow</p>
+            <h2 className="mt-3 text-4xl font-black">Upload once, approve every placement with context.</h2>
+            <p className="mt-4 text-[#555]">The app separates Adapt and Resize so translation QA and production resizing stay focused.</p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {["OCR and copy filtering", "GPT-4o translation", "Background restoration", "Platform previews", "Manual edit pass", "Credit-based checkout"].map((item, index) => (
+              <div key={item} className="flex items-center gap-3 rounded-md bg-[#faf9f5] p-3">
+                <span className="grid h-8 w-8 place-items-center rounded-md bg-[#151515] text-xs font-black text-white">{index + 1}</span>
+                <span className="text-sm font-semibold">{item}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-[1180px] px-5 py-12">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <p className="text-sm font-black uppercase text-[#0f766e]">Pricing</p>
+            <h2 className="mt-2 text-4xl font-black">Credits that scale with production volume.</h2>
+          </div>
+          <button type="button" onClick={() => chooseAuth("sign-up")} className="h-11 rounded-md bg-[#151515] px-5 font-semibold text-white">Create account</button>
+        </div>
+        <div className="mt-8 grid gap-4 md:grid-cols-3">
+          {[
+            ["Starter", "250 credits", "$19", "Small campaign tests and quick localization checks."],
+            ["Studio", "900 credits", "$49", "Recurring paid social and display production."],
+            ["Scale", "3500 credits", "$149", "High-volume global creative operations."],
+          ].map(([name, creditsLabel, price, body]) => (
+            <div key={name} className="rounded-md border border-[#151515]/10 bg-white p-5">
+              <p className="text-lg font-black">{name}</p>
+              <p className="mt-4 text-4xl font-black">{price}</p>
+              <p className="mt-2 text-sm font-semibold text-[#0f766e]">{creditsLabel}</p>
+              <p className="mt-4 text-sm leading-6 text-[#555]">{body}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <footer className="mx-auto flex max-w-[1180px] flex-wrap items-center justify-between gap-3 border-t border-[#151515]/10 px-5 py-5 text-xs text-[#666]">
+        <span>Strictly stateless creative processing / temporary files auto-delete after 24h</span>
+        <nav className="flex gap-4"><a href="/terms" className="hover:text-[#151515]">Terms</a><a href="/privacy" className="hover:text-[#151515]">Privacy GDPR/KVKK</a><a href="/refund" className="hover:text-[#151515]">Refund</a></nav>
+      </footer>
+      <ConsentBanner />
+    </main>
+  );
+}
+
 function Creative({ placement, copy, mode, x, y, opacity, scale, fit }: { placement: Placement; copy: string; mode: Mode; x: number; y: number; opacity: number; scale: number; fit: FitMode }) {
   const box = placement.ratio === "9:16" ? { x: 9 + x, y: 28 + y, width: 65, height: 24 } : { x: 8 + x, y: 30 + y, width: 62, height: 26 };
   return (
@@ -127,7 +366,7 @@ function Preview({ placement, mode, device, copy, x, y, opacity, scale, fit }: {
   );
   else if (placement.platform === "TIKTOK") shell = (
     <div className="relative mx-auto w-[320px] overflow-hidden rounded-[26px] bg-[#0c0c0f] p-3 text-white shadow-2xl">
-      <div className="overflow-hidden rounded-[20px]">{creative}</div><div className="absolute right-5 top-[36%] grid gap-3 text-center text-[10px] font-bold">{["+", "♥", "↗", "♪"].map((i) => <span key={i} className="grid h-9 w-9 place-items-center rounded-full bg-white/20">{i}</span>)}</div>
+      <div className="overflow-hidden rounded-[20px]">{creative}</div><div className="absolute right-5 top-[36%] grid gap-3 text-center text-[10px] font-bold">{["+", "Like", "Share", "Audio"].map((i) => <span key={i} className="grid h-9 w-9 place-items-center rounded-full bg-white/20">{i}</span>)}</div>
       <div className="absolute bottom-6 left-6 right-16 text-xs"><p className="font-bold">@brand</p><p className="text-white/80">Localized campaign copy</p></div>
     </div>
   );
@@ -142,7 +381,7 @@ function Preview({ placement, mode, device, copy, x, y, opacity, scale, fit }: {
     </div>
   );
   else if (placement.platform === "SNAPCHAT") shell = (
-    <div className="relative mx-auto w-[320px] overflow-hidden rounded-[26px] bg-[#fffc00] p-3 shadow-2xl"><div className="overflow-hidden rounded-[20px]">{creative}</div><div className="absolute left-6 right-6 top-6 flex justify-between text-xs font-bold"><span>Story Ad</span><span>•••</span></div><div className="absolute bottom-6 left-8 right-8 rounded-full bg-white px-4 py-2 text-center text-xs font-black">Swipe up</div></div>
+    <div className="relative mx-auto w-[320px] overflow-hidden rounded-[26px] bg-[#fffc00] p-3 shadow-2xl"><div className="overflow-hidden rounded-[20px]">{creative}</div><div className="absolute left-6 right-6 top-6 flex justify-between text-xs font-bold"><span>Story Ad</span><span>...</span></div><div className="absolute bottom-6 left-8 right-8 rounded-full bg-white px-4 py-2 text-center text-xs font-black">Swipe up</div></div>
   );
   else shell = (
     <div className={["mx-auto overflow-hidden rounded-md border bg-white shadow-xl", device === "mobile" ? "w-[340px]" : "w-full max-w-[820px]"].join(" ")}>
@@ -178,10 +417,11 @@ export function AdaptDashboard() {
   const [authUser, setAuthUser] = useState<SupabaseUser | null>(null);
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
-  const [authMode, setAuthMode] = useState<"sign-in" | "sign-up">("sign-in");
+  const [authMode, setAuthMode] = useState<AuthMode>("sign-in");
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [authReady, setAuthReady] = useState(!supabaseConfigured);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [authPending, setAuthPending] = useState(false);
   const [adminTargetEmail, setAdminTargetEmail] = useState("");
   const [adminAmount, setAdminAmount] = useState(100);
   const [adminAction, setAdminAction] = useState<"add" | "deduct">("add");
@@ -311,14 +551,27 @@ export function AdaptDashboard() {
     event.preventDefault();
     if (!supabase) return;
     setAuthError(null);
-    const authCall = authMode === "sign-up" ? supabase.auth.signUp : supabase.auth.signInWithPassword;
-    const { data, error } = await authCall.bind(supabase.auth)({ email: authEmail, password: authPassword });
-    if (error) {
-      setAuthError(error.message);
-      return;
+    setAuthPending(true);
+    try {
+      const email = authEmail.trim().toLowerCase();
+      if (authMode === "sign-up") {
+        const response = await fetch("/api/auth/signup", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ email, password: authPassword }),
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error ?? "Unable to create account.");
+      }
+
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password: authPassword });
+      if (error) throw error;
+      if (data.user?.email) setUserId(data.user.email);
+    } catch (caught) {
+      setAuthError(caught instanceof Error ? caught.message : "Authentication failed.");
+    } finally {
+      setAuthPending(false);
     }
-    if (data.user?.email) setUserId(data.user.email);
-    if (authMode === "sign-up" && !data.session) setAuthError("Check your email to confirm the account, then sign in.");
   };
 
   const adjustCredits = async () => {
@@ -345,19 +598,7 @@ export function AdaptDashboard() {
 
   if (supabaseConfigured && !authUser) {
     return (
-      <main className="grid min-h-screen place-items-center bg-[#faf9f5] px-5 text-[#151515]">
-        <form onSubmit={submitAuth} className="w-full max-w-sm rounded-md border border-[#151515]/10 bg-white p-6 shadow-sm">
-          <Brand />
-          <h1 className="mt-6 text-2xl font-semibold">{authMode === "sign-in" ? "Sign in" : "Create account"}</h1>
-          <div className="mt-5 space-y-3">
-            <label className="block text-sm font-semibold">Email<input className="mt-1 h-11 w-full rounded-md border border-[#151515]/15 px-3 outline-none focus:border-[#0f766e]" type="email" autoComplete="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} required /></label>
-            <label className="block text-sm font-semibold">Password<input className="mt-1 h-11 w-full rounded-md border border-[#151515]/15 px-3 outline-none focus:border-[#0f766e]" type="password" autoComplete={authMode === "sign-in" ? "current-password" : "new-password"} value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} required minLength={6} /></label>
-          </div>
-          {authError && <p className="mt-3 rounded-md bg-[#fff0d8] p-3 text-sm text-[#6b3b00]">{authError}</p>}
-          <button type="submit" className="mt-5 flex h-11 w-full items-center justify-center gap-2 rounded-md bg-[#151515] font-semibold text-white"><LogIn className="h-4 w-4" />{authMode === "sign-in" ? "Sign in" : "Sign up"}</button>
-          <button type="button" onClick={() => setAuthMode(authMode === "sign-in" ? "sign-up" : "sign-in")} className="mt-3 w-full text-sm font-semibold text-[#0f766e]">{authMode === "sign-in" ? "Need an account? Sign up" : "Already have an account? Sign in"}</button>
-        </form>
-      </main>
+      <LandingPage authMode={authMode} setAuthMode={setAuthMode} authEmail={authEmail} setAuthEmail={setAuthEmail} authPassword={authPassword} setAuthPassword={setAuthPassword} authError={authError} authPending={authPending} submitAuth={submitAuth} />
     );
   }
 
@@ -480,6 +721,7 @@ export function AdaptDashboard() {
         <span>Strictly stateless creative processing / temporary files auto-delete after 24h</span>
         <nav className="flex gap-4"><a href="/terms" className="hover:text-[#151515]">Terms of Service</a><a href="/privacy" className="hover:text-[#151515]">Privacy GDPR/KVKK</a><a href="/refund" className="hover:text-[#151515]">Refund Policy</a><a href="mailto:support@adaptif.ai" className="hover:text-[#151515]">Support</a></nav>
       </footer>
+      <ConsentBanner />
     </main>
   );
 }
