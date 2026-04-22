@@ -2,6 +2,46 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedEmail } from "@/lib/auth";
 import { creditPacks, CreditPackId, getStripe } from "@/lib/stripe";
 
+async function createCheckoutSessionWithRest({
+  origin,
+  priceId,
+  pack,
+  packId,
+  userId,
+}: {
+  origin: string;
+  priceId: string;
+  pack: (typeof creditPacks)[CreditPackId];
+  packId: CreditPackId;
+  userId: string;
+}) {
+  if (!process.env.STRIPE_SECRET_KEY) throw new Error("Stripe secret key is not configured.");
+
+  const body = new URLSearchParams({
+    mode: "payment",
+    success_url: `${origin}?checkout=success&credits=${pack.credits}`,
+    cancel_url: `${origin}?checkout=cancelled`,
+    "line_items[0][quantity]": "1",
+    "line_items[0][price]": priceId,
+    "metadata[credits]": String(pack.credits),
+    "metadata[pack]": packId,
+    "metadata[user_id]": userId,
+  });
+  if (userId.includes("@")) body.set("customer_email", userId);
+
+  const response = await fetch("https://api.stripe.com/v1/checkout/sessions", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`,
+      "content-type": "application/x-www-form-urlencoded",
+    },
+    body,
+  });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error?.message ?? "Unable to create Stripe Checkout Session.");
+  return payload as { url?: string };
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as { pack?: CreditPackId; user_id?: string };
@@ -19,34 +59,40 @@ export async function POST(request: NextRequest) {
     }
 
     const origin = request.headers.get("origin") ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-    const stripe = getStripe();
     const configuredPriceId = process.env[pack.envPriceKey];
-    const session = await stripe.checkout.sessions.create({
-      mode: "payment",
-      success_url: `${origin}?checkout=success&credits=${pack.credits}`,
-      cancel_url: `${origin}?checkout=cancelled`,
-      line_items: configuredPriceId
-        ? [{ quantity: 1, price: configuredPriceId }]
-        : [
-            {
-              quantity: 1,
-              price_data: {
-                currency: "usd",
-                unit_amount: pack.amount,
-                product_data: {
-                  name: pack.name,
-                  metadata: { credits: String(pack.credits) },
+    let session: { url?: string | null };
+    try {
+      const stripe = getStripe();
+      session = await stripe.checkout.sessions.create({
+        mode: "payment",
+        success_url: `${origin}?checkout=success&credits=${pack.credits}`,
+        cancel_url: `${origin}?checkout=cancelled`,
+        line_items: configuredPriceId
+          ? [{ quantity: 1, price: configuredPriceId }]
+          : [
+              {
+                quantity: 1,
+                price_data: {
+                  currency: "usd",
+                  unit_amount: pack.amount,
+                  product_data: {
+                    name: pack.name,
+                    metadata: { credits: String(pack.credits) },
+                  },
                 },
               },
-            },
-          ],
-      metadata: {
-        credits: String(pack.credits),
-        pack: packId,
-        user_id: userId,
-      },
-      customer_email: userId.includes("@") ? userId : undefined,
-    });
+            ],
+        metadata: {
+          credits: String(pack.credits),
+          pack: packId,
+          user_id: userId,
+        },
+        customer_email: userId.includes("@") ? userId : undefined,
+      });
+    } catch {
+      if (!configuredPriceId) throw new Error("Stripe price is not configured.");
+      session = await createCheckoutSessionWithRest({ origin, priceId: configuredPriceId, pack, packId, userId });
+    }
 
     return NextResponse.json({ url: session.url });
   } catch (error) {
