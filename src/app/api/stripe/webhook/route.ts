@@ -16,8 +16,22 @@ export async function POST(request: NextRequest) {
 
     if (event.type === "checkout.session.completed") {
       const session = event.data.object;
-      const credits = Number(session.metadata?.credits ?? 0);
-      const userId = session.metadata?.user_id || session.customer_email || String(session.customer ?? "guest");
+      let credits = Number(session.metadata?.credits ?? 0);
+      if (!credits) {
+        const amount = Number(session.amount_total ?? 0);
+        if (amount === 1900) credits = 250;
+        if (amount === 4900) credits = 900;
+        if (amount === 14900) credits = 3500;
+      }
+      let referenceEmail: string | undefined;
+      if (session.client_reference_id?.startsWith("u_")) {
+        try {
+          referenceEmail = Buffer.from(session.client_reference_id.slice(2), "base64url").toString("utf8");
+        } catch {
+          referenceEmail = undefined;
+        }
+      }
+      const userId = session.metadata?.user_id || session.customer_email || referenceEmail || String(session.customer ?? "guest");
       const balance = await addCredits(userId, credits, session.id, "stripe", "stripe_checkout");
       console.info("Credit purchase completed", {
         session: session.id,

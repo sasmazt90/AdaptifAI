@@ -42,6 +42,14 @@ async function createCheckoutSessionWithRest({
   return payload as { url?: string };
 }
 
+function paymentLinkForUser(paymentLink: string, userId: string) {
+  const url = new URL(paymentLink);
+  if (userId.includes("@")) url.searchParams.set("prefilled_email", userId);
+  const reference = Buffer.from(userId, "utf8").toString("base64url");
+  url.searchParams.set("client_reference_id", `u_${reference}`.slice(0, 200));
+  return url.toString();
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as { pack?: CreditPackId; user_id?: string };
@@ -55,7 +63,7 @@ export async function POST(request: NextRequest) {
 
     const paymentLink = process.env[pack.envPaymentLinkKey];
     if (!process.env.STRIPE_SECRET_KEY && paymentLink) {
-      return NextResponse.json({ url: paymentLink, mode: "payment_link" });
+      return NextResponse.json({ url: paymentLinkForUser(paymentLink, userId), mode: "payment_link" });
     }
 
     const origin = request.headers.get("origin") ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
@@ -90,18 +98,20 @@ export async function POST(request: NextRequest) {
         customer_email: userId.includes("@") ? userId : undefined,
       });
     } catch {
-      if (!configuredPriceId) throw new Error("Stripe price is not configured.");
-      session = await createCheckoutSessionWithRest({ origin, priceId: configuredPriceId, pack, packId, userId });
+      try {
+        if (!configuredPriceId) throw new Error("Stripe price is not configured.");
+        session = await createCheckoutSessionWithRest({ origin, priceId: configuredPriceId, pack, packId, userId });
+      } catch {
+        if (paymentLink) {
+          return NextResponse.json({ url: paymentLinkForUser(paymentLink, userId), mode: "payment_link_fallback" });
+        }
+        throw new Error("Unable to create Stripe Checkout Session.");
+      }
     }
 
     return NextResponse.json({ url: session.url });
   } catch (error) {
-    const fallbackPackId = "starter";
-    const fallbackLink = process.env[creditPacks[fallbackPackId].envPaymentLinkKey];
-    if (fallbackLink) {
-      return NextResponse.json({ url: fallbackLink, mode: "payment_link_fallback" });
-    }
     const message = error instanceof Error ? error.message : "Unable to create Stripe Checkout Session.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: message === "Authentication required." ? 401 : 500 });
   }
 }
