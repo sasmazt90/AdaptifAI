@@ -6,7 +6,8 @@ type CreditLedger = {
   processedSessions: Record<string, string>;
 };
 
-const ledgerPath = join(process.cwd(), ".adaptifai", "credits.json");
+const ledgerRoot = process.env.ADAPTIFAI_LEDGER_DIR ?? (process.env.VERCEL ? "/tmp/adaptifai" : join(process.cwd(), ".adaptifai"));
+const ledgerPath = join(ledgerRoot, "credits.json");
 
 function readLedger(): CreditLedger {
   try {
