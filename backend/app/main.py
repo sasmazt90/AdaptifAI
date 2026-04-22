@@ -146,6 +146,17 @@ def load_ocr_models():
     return OCR_DETECTOR, TROCR_PROCESSOR, TROCR_MODEL
 
 
+def load_ocr_detector():
+    global OCR_DETECTOR
+
+    if OCR_DETECTOR is None:
+        import easyocr
+
+        OCR_DETECTOR = easyocr.Reader(["en"], gpu=torch_device() == "cuda", verbose=False)
+
+    return OCR_DETECTOR
+
+
 def load_inpaint_pipeline():
     global INPAINT_PIPELINE
 
@@ -254,9 +265,13 @@ def run_trocr_ocr(paths: list[Path]) -> list[TextBlock]:
     if not image_path:
         return []
 
-    import torch
+    detector = load_ocr_detector()
+    use_trocr = os.getenv("ADAPTIFAI_OCR_ENGINE", "easyocr").lower() == "trocr"
+    processor = model = None
+    if use_trocr:
+        import torch
 
-    detector, processor, model = load_ocr_models()
+        _, processor, model = load_ocr_models()
     image = Image.open(image_path).convert("RGB")
     detections = detector.readtext(np.array(image), detail=1, paragraph=False)
     blocks: list[TextBlock] = []
@@ -276,11 +291,13 @@ def run_trocr_ocr(paths: list[Path]) -> list[TextBlock]:
         if right <= left or bottom <= top:
             continue
 
-        crop = image.crop((left, top, right, bottom))
-        pixel_values = processor(images=crop, return_tensors="pt").pixel_values.to(torch_device())
-        with torch.inference_mode():
-            generated_ids = model.generate(pixel_values, max_new_tokens=48)
-        recognized = processor.batch_decode(generated_ids, skip_special_tokens=True)[0].strip()
+        recognized = ""
+        if use_trocr and processor is not None and model is not None:
+            crop = image.crop((left, top, right, bottom))
+            pixel_values = processor(images=crop, return_tensors="pt").pixel_values.to(torch_device())
+            with torch.inference_mode():
+                generated_ids = model.generate(pixel_values, max_new_tokens=48)
+            recognized = processor.batch_decode(generated_ids, skip_special_tokens=True)[0].strip()
         text = recognized or str(detected_text).strip()
         if not text:
             continue
@@ -476,7 +493,9 @@ def health() -> dict[str, str]:
     return {
         "status": "ok",
         "storage": "stateless-temp-24h",
+        "ocr_engine": os.getenv("ADAPTIFAI_OCR_ENGINE", "easyocr"),
         "ocr": os.getenv("ADAPTIFAI_TROCR_MODEL", "microsoft/trocr-base-printed"),
+        "inpainting_backend": os.getenv("ADAPTIFAI_INPAINT_BACKEND", "stable-diffusion"),
         "inpainting": os.getenv("ADAPTIFAI_INPAINT_MODEL", "runwayml/stable-diffusion-inpainting"),
     }
 

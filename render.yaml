@@ -16,6 +16,8 @@ services:
         value: gpt-4o
       - key: ADAPTIFAI_TROCR_MODEL
         value: microsoft/trocr-base-printed
+      - key: ADAPTIFAI_OCR_ENGINE
+        value: easyocr
       - key: ADAPTIFAI_INPAINT_MODEL
         value: runwayml/stable-diffusion-inpainting
       - key: ADAPTIFAI_INPAINT_BACKEND
