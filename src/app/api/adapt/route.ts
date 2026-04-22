@@ -29,6 +29,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(payload, { status: response.status });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Adapt pipeline is unavailable.";
+    if (message === "Authentication required.") {
+      return NextResponse.json({ error: message }, { status: 401 });
+    }
     return NextResponse.json(
       {
         error: message,

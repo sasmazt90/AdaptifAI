@@ -50,6 +50,11 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ url: session.url });
   } catch (error) {
+    const fallbackPackId = "starter";
+    const fallbackLink = process.env[creditPacks[fallbackPackId].envPaymentLinkKey];
+    if (fallbackLink) {
+      return NextResponse.json({ url: fallbackLink, mode: "payment_link_fallback" });
+    }
     const message = error instanceof Error ? error.message : "Unable to create Stripe Checkout Session.";
     return NextResponse.json({ error: message }, { status: 500 });
   }
