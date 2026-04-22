@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getAuthenticatedEmail } from "@/lib/auth";
 import { creditPacks, CreditPackId, getStripe } from "@/lib/stripe";
 
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as { pack?: CreditPackId; user_id?: string };
+    const userId = (await getAuthenticatedEmail(request)) ?? body.user_id ?? "guest";
     const packId = body.pack ?? "starter";
     const pack = creditPacks[packId];
 
@@ -41,9 +43,9 @@ export async function POST(request: NextRequest) {
       metadata: {
         credits: String(pack.credits),
         pack: packId,
-        user_id: body.user_id ?? "guest",
+        user_id: userId,
       },
-      customer_email: body.user_id?.includes("@") ? body.user_id : undefined,
+      customer_email: userId.includes("@") ? userId : undefined,
     });
 
     return NextResponse.json({ url: session.url });

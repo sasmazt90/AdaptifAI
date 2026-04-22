@@ -210,11 +210,13 @@ export function AdaptDashboard() {
 
   useEffect(() => {
     window.localStorage.setItem("adaptifai:user", currentUserEmail);
-    fetch(`/api/credits?user_id=${encodeURIComponent(currentUserEmail)}`)
+    fetch(`/api/credits?user_id=${encodeURIComponent(currentUserEmail)}`, {
+      headers: sessionToken ? { authorization: `Bearer ${sessionToken}` } : undefined,
+    })
       .then((response) => response.json())
       .then((payload) => setCredits(Number(payload.credits ?? 0)))
       .catch(() => undefined);
-  }, [currentUserEmail]);
+  }, [currentUserEmail, sessionToken]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -247,7 +249,11 @@ export function AdaptDashboard() {
     formData.append("placements", selectedPlacementIds.join(","));
 
     try {
-      const response = await fetch("/api/adapt", { method: "POST", body: formData });
+      const response = await fetch("/api/adapt", {
+        method: "POST",
+        body: formData,
+        headers: sessionToken ? { authorization: `Bearer ${sessionToken}` } : undefined,
+      });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? "Pipeline failed.");
       setResult(payload);
@@ -262,7 +268,10 @@ export function AdaptDashboard() {
   const buyCredits = async () => {
     const response = await fetch("/api/stripe/checkout", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        ...(sessionToken ? { authorization: `Bearer ${sessionToken}` } : {}),
+      },
       body: JSON.stringify({ pack: "starter", user_id: currentUserEmail }),
     });
     const payload = await response.json();

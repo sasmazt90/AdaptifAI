@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getAuthenticatedEmail } from "@/lib/auth";
 import { spendCredits } from "@/lib/credits";
 
 export const runtime = "nodejs";
@@ -8,7 +9,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const formData = await request.formData();
-    const userId = String(formData.get("user_id") ?? "guest");
+    const userId = (await getAuthenticatedEmail(request)) ?? String(formData.get("user_id") ?? "guest");
     const response = await fetch(`${backendUrl}/adapt`, {
       method: "POST",
       body: formData,
