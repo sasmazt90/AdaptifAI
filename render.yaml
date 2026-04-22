@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: adaptifai-backend
+    runtime: docker
+    rootDir: backend
+    plan: standard
+    healthCheckPath: /health
+    disk:
+      name: adaptifai-model-cache
+      mountPath: /data
+      sizeGB: 20
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_TRANSLATION_MODEL
+        value: gpt-4o
+      - key: ADAPTIFAI_TROCR_MODEL
+        value: microsoft/trocr-base-printed
+      - key: ADAPTIFAI_INPAINT_MODEL
+        value: runwayml/stable-diffusion-inpainting
+      - key: ADAPTIFAI_INPAINT_BACKEND
+        value: stable-diffusion
+      - key: ADAPTIFAI_INPAINT_MAX_SIDE
+        value: "384"
+      - key: ADAPTIFAI_INPAINT_STEPS
+        value: "12"
+      - key: ADAPTIFAI_CORS_ORIGINS
+        value: https://adaptifai-five.vercel.app
+      - key: HF_HOME
+        value: /data/huggingface
+      - key: TORCH_HOME
+        value: /data/torch
+      - key: EASYOCR_MODULE_PATH
+        value: /data/easyocr
+      - key: ADAPTIFAI_TMP_DIR
+        value: /data/tmp/adaptifai

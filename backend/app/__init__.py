@@ -1,0 +1,1 @@
+"""AdaptifAI FastAPI backend."""

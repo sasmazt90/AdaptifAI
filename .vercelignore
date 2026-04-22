@@ -1,0 +1,8 @@
+.env
+.env.*
+.venv
+backend/.venv
+.adaptifai
+output
+.playwright-cli
+*.log
