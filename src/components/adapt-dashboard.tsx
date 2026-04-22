@@ -101,15 +101,27 @@ function Creative({ placement, copy, mode, x, y, opacity, scale, fit }: { placem
   );
 }
 
+function AdFrame({ placement, children }: { placement: Placement; children: ReactNode }) {
+  return (
+    <div className="overflow-hidden rounded-md border border-[#151515]/15 bg-white">
+      <div className="flex items-center justify-between border-b border-[#151515]/10 bg-[#faf9f5] px-2 py-1 text-[10px] font-semibold uppercase tracking-normal text-[#666]">
+        <span>Ad creative</span>
+        <span>{placement.width} x {placement.height}</span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
 function Preview({ placement, mode, device, copy, x, y, opacity, scale, fit }: { placement: Placement; mode: Mode; device: Device; copy: string; x: number; y: number; opacity: number; scale: number; fit: FitMode }) {
   const box = placement.ratio === "9:16" ? { x: 9 + x, y: 28 + y, width: 65, height: 24 } : { x: 8 + x, y: 30 + y, width: 62, height: 26 };
   const warnings = placement.safeZones.filter((zone) => overlaps(zone, box));
-  const creative = <Creative placement={placement} mode={mode} copy={copy} x={x} y={y} opacity={opacity} scale={scale} fit={fit} />;
+  const creative = <AdFrame placement={placement}><Creative placement={placement} mode={mode} copy={copy} x={x} y={y} opacity={opacity} scale={scale} fit={fit} /></AdFrame>;
   let shell: ReactNode = null;
 
   if (placement.platform === "META") shell = (
     <div className={["mx-auto overflow-hidden rounded-md border bg-white shadow-xl", device === "mobile" ? "w-[320px]" : "w-full max-w-[700px]"].join(" ")}>
-      <div className="flex items-center gap-3 border-b px-4 py-3"><span className="grid h-8 w-8 place-items-center rounded-full bg-[#1877f2] font-black text-white">f</span><div><p className="text-xs font-bold">AdaptifAI Sponsored</p><p className="text-[10px] text-[#666]">Feed placement preview</p></div></div>
+      <div className="flex items-center gap-3 border-b px-4 py-3"><span className="grid h-8 w-8 place-items-center rounded-full bg-[#1877f2] font-black text-white">f</span><div><p className="text-xs font-bold">AdaptifAI Sponsored</p><p className="text-[10px] text-[#666]">{placement.label} placement preview</p></div><button type="button" className="ml-auto rounded-full border px-3 py-1 text-[10px] font-bold text-[#1877f2]">Follow</button></div>
       <div className="p-3">{creative}</div><div className="flex justify-around border-t px-4 py-3 text-xs font-bold text-[#555]"><span>Like</span><span>Comment</span><span>Share</span></div>
     </div>
   );
@@ -135,7 +147,7 @@ function Preview({ placement, mode, device, copy, x, y, opacity, scale, fit }: {
   else shell = (
     <div className={["mx-auto overflow-hidden rounded-md border bg-white shadow-xl", device === "mobile" ? "w-[340px]" : "w-full max-w-[820px]"].join(" ")}>
       <div className="flex items-center gap-2 border-b bg-[#f7f7f7] px-4 py-3"><span className="h-3 w-3 rounded-full bg-[#ee4d6a]" /><span className="h-3 w-3 rounded-full bg-[#f0d553]" /><span className="h-3 w-3 rounded-full bg-[#38b6a6]" /><span className="ml-3 rounded bg-white px-3 py-1 text-[10px] text-[#666]">news.example/ad-preview</span></div>
-      <div className={["grid gap-4 p-4", device === "desktop" && placement.height > 120 ? "grid-cols-[1fr_300px]" : ""].join(" ")}><div><p className="text-xs font-black uppercase text-[#0f766e]">Market news</p><h3 className="mt-2 text-xl font-semibold">Article layout</h3><div className="mt-4 space-y-2"><div className="h-3 rounded bg-[#ededed]" /><div className="h-3 w-5/6 rounded bg-[#ededed]" /><div className="h-3 w-2/3 rounded bg-[#ededed]" /></div></div><div>{creative}</div></div>
+      <div className={["grid gap-4 p-4", device === "desktop" && placement.height > 120 ? "grid-cols-[1fr_300px]" : ""].join(" ")}><div><p className="text-xs font-black uppercase text-[#0f766e]">{placement.platform === "GOOGLE" ? "Google Display Network" : "Native publisher"}</p><h3 className="mt-2 text-xl font-semibold">{placement.platform === "GOOGLE" ? "Display inventory preview" : "Article layout"}</h3><div className="mt-4 space-y-2"><div className="h-3 rounded bg-[#ededed]" /><div className="h-3 w-5/6 rounded bg-[#ededed]" /><div className="h-3 w-2/3 rounded bg-[#ededed]" /></div></div><div><p className="mb-1 text-right text-[10px] font-semibold uppercase text-[#777]">Advertisement</p>{creative}</div></div>
     </div>
   );
 

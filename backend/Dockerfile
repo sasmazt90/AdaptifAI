@@ -2,6 +2,9 @@ FROM python:3.11-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
+    OMP_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1 \
+    TOKENIZERS_PARALLELISM=false \
     HF_HOME=/data/huggingface \
     TORCH_HOME=/data/torch \
     EASYOCR_MODULE_PATH=/data/easyocr \

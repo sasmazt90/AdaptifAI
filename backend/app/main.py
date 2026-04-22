@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import tempfile
+import threading
 import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -71,6 +72,8 @@ OCR_DETECTOR = None
 TROCR_PROCESSOR = None
 TROCR_MODEL = None
 INPAINT_PIPELINE = None
+OCR_MODEL_LOCK = threading.Lock()
+INPAINT_MODEL_LOCK = threading.Lock()
 
 
 class TextBlock(BaseModel):
@@ -126,22 +129,27 @@ def torch_device() -> str:
     return "cuda" if torch.cuda.is_available() else "cpu"
 
 
+def is_cpu_runtime() -> bool:
+    return torch_device() == "cpu"
+
+
 def load_ocr_models():
     global OCR_DETECTOR, TROCR_MODEL, TROCR_PROCESSOR
 
-    if OCR_DETECTOR is None:
-        import easyocr
+    with OCR_MODEL_LOCK:
+        if OCR_DETECTOR is None:
+            import easyocr
 
-        OCR_DETECTOR = easyocr.Reader(["en"], gpu=torch_device() == "cuda", verbose=False)
+            OCR_DETECTOR = easyocr.Reader(["en"], gpu=not is_cpu_runtime(), verbose=False)
 
-    if TROCR_PROCESSOR is None or TROCR_MODEL is None:
-        from transformers import TrOCRProcessor, VisionEncoderDecoderModel
+        if TROCR_PROCESSOR is None or TROCR_MODEL is None:
+            from transformers import TrOCRProcessor, VisionEncoderDecoderModel
 
-        model_id = os.getenv("ADAPTIFAI_TROCR_MODEL", "microsoft/trocr-base-printed")
-        TROCR_PROCESSOR = TrOCRProcessor.from_pretrained(model_id)
-        TROCR_MODEL = VisionEncoderDecoderModel.from_pretrained(model_id)
-        TROCR_MODEL.to(torch_device())
-        TROCR_MODEL.eval()
+            model_id = os.getenv("ADAPTIFAI_TROCR_MODEL", "microsoft/trocr-base-printed")
+            TROCR_PROCESSOR = TrOCRProcessor.from_pretrained(model_id)
+            TROCR_MODEL = VisionEncoderDecoderModel.from_pretrained(model_id)
+            TROCR_MODEL.to(torch_device())
+            TROCR_MODEL.eval()
 
     return OCR_DETECTOR, TROCR_PROCESSOR, TROCR_MODEL
 
@@ -149,10 +157,11 @@ def load_ocr_models():
 def load_ocr_detector():
     global OCR_DETECTOR
 
-    if OCR_DETECTOR is None:
-        import easyocr
+    with OCR_MODEL_LOCK:
+        if OCR_DETECTOR is None:
+            import easyocr
 
-        OCR_DETECTOR = easyocr.Reader(["en"], gpu=torch_device() == "cuda", verbose=False)
+            OCR_DETECTOR = easyocr.Reader(["en"], gpu=not is_cpu_runtime(), verbose=False)
 
     return OCR_DETECTOR
 
@@ -160,21 +169,22 @@ def load_ocr_detector():
 def load_inpaint_pipeline():
     global INPAINT_PIPELINE
 
-    if INPAINT_PIPELINE is None:
-        import torch
-        from diffusers import AutoPipelineForInpainting
+    with INPAINT_MODEL_LOCK:
+        if INPAINT_PIPELINE is None:
+            import torch
+            from diffusers import AutoPipelineForInpainting
 
-        model_id = os.getenv("ADAPTIFAI_INPAINT_MODEL", "runwayml/stable-diffusion-inpainting")
-        dtype = torch.float16 if torch_device() == "cuda" else torch.float32
-        INPAINT_PIPELINE = AutoPipelineForInpainting.from_pretrained(
-            model_id,
-            torch_dtype=dtype,
-            safety_checker=None,
-            requires_safety_checker=False,
-        )
-        INPAINT_PIPELINE.to(torch_device())
-        if torch_device() == "cuda":
-            INPAINT_PIPELINE.enable_attention_slicing()
+            model_id = os.getenv("ADAPTIFAI_INPAINT_MODEL", "runwayml/stable-diffusion-inpainting")
+            dtype = torch.float16 if not is_cpu_runtime() else torch.float32
+            INPAINT_PIPELINE = AutoPipelineForInpainting.from_pretrained(
+                model_id,
+                torch_dtype=dtype,
+                safety_checker=None,
+                requires_safety_checker=False,
+            )
+            INPAINT_PIPELINE.to(torch_device())
+            if not is_cpu_runtime():
+                INPAINT_PIPELINE.enable_attention_slicing()
 
     return INPAINT_PIPELINE
 
@@ -267,13 +277,23 @@ def run_trocr_ocr(paths: list[Path]) -> list[TextBlock]:
 
     detector = load_ocr_detector()
     use_trocr = os.getenv("ADAPTIFAI_OCR_ENGINE", "easyocr").lower() == "trocr"
+    if use_trocr and is_cpu_runtime() and os.getenv("ADAPTIFAI_ALLOW_CPU_TROCR") != "1":
+        use_trocr = False
     processor = model = None
     if use_trocr:
         import torch
 
         _, processor, model = load_ocr_models()
     image = Image.open(image_path).convert("RGB")
-    detections = detector.readtext(np.array(image), detail=1, paragraph=False)
+    ocr_image, scale = fit_for_ocr(image)
+    detections = detector.readtext(
+        np.array(ocr_image),
+        detail=1,
+        paragraph=False,
+        batch_size=int(os.getenv("ADAPTIFAI_OCR_BATCH_SIZE", "1")),
+        width_ths=float(os.getenv("ADAPTIFAI_OCR_WIDTH_THS", "0.7")),
+        decoder=os.getenv("ADAPTIFAI_EASYOCR_DECODER", "greedy"),
+    )
     blocks: list[TextBlock] = []
 
     for detection in detections:
@@ -281,8 +301,8 @@ def run_trocr_ocr(paths: list[Path]) -> list[TextBlock]:
         if confidence < float(os.getenv("ADAPTIFAI_OCR_MIN_CONFIDENCE", "0.25")):
             continue
 
-        xs = [int(point[0]) for point in points]
-        ys = [int(point[1]) for point in points]
+        xs = [int(point[0] / scale) for point in points]
+        ys = [int(point[1] / scale) for point in points]
         padding = int(os.getenv("ADAPTIFAI_OCR_BOX_PADDING", "8"))
         left = max(0, min(xs) - padding)
         top = max(0, min(ys) - padding)
@@ -312,6 +332,15 @@ def run_trocr_ocr(paths: list[Path]) -> list[TextBlock]:
         )
 
     return blocks
+
+
+def fit_for_ocr(image: Image.Image) -> tuple[Image.Image, float]:
+    max_side = int(os.getenv("ADAPTIFAI_OCR_MAX_SIDE", "1280" if is_cpu_runtime() else "2200"))
+    width, height = image.size
+    scale = min(max_side / max(width, height), 1.0)
+    if scale >= 1.0:
+        return image, 1.0
+    return image.resize((max(1, int(width * scale)), max(1, int(height * scale))), Image.Resampling.LANCZOS), scale
 
 
 def classify_text_role(text: str) -> str:
@@ -461,11 +490,12 @@ def resize_outputs(placements: list[str], output_format: str, job_dir: Path, inp
         if inpainted and extension in {"png", "jpg", "jpeg", "webp", "pdf"}:
             try:
                 with Image.open(inpainted) as image:
-                    resized = image.convert("RGB").resize((width, height))
+                    resized = fit_image_to_canvas(image.convert("RGB"), width, height)
                     if extension == "pdf":
                         resized.save(job_dir / filename, "PDF", resolution=100.0)
                     else:
-                        resized.save(job_dir / filename)
+                        save_kwargs = {"quality": 92} if extension in {"jpg", "jpeg", "webp"} else {}
+                        resized.save(job_dir / filename, **save_kwargs)
             except OSError:
                 pass
 
@@ -487,16 +517,45 @@ def resize_outputs(placements: list[str], output_format: str, job_dir: Path, inp
     return outputs
 
 
+def fit_image_to_canvas(image: Image.Image, width: int, height: int) -> Image.Image:
+    mode = os.getenv("ADAPTIFAI_RESIZE_FIT", "cover").lower()
+    if mode == "contain":
+        bg_parts = [int(part) for part in os.getenv("ADAPTIFAI_RESIZE_BG", "250,249,245").split(",")[:3]]
+        bg_color = tuple((bg_parts + [250, 249, 245])[:3])
+        canvas = Image.new("RGB", (width, height), bg_color)
+        image.thumbnail((width, height), Image.Resampling.LANCZOS)
+        canvas.paste(image, ((width - image.width) // 2, (height - image.height) // 2))
+        return canvas
+
+    src_ratio = image.width / image.height
+    target_ratio = width / height
+    if mode == "fill" or abs(src_ratio - target_ratio) < 0.01:
+        return image.resize((width, height), Image.Resampling.LANCZOS)
+
+    if src_ratio > target_ratio:
+        crop_width = int(image.height * target_ratio)
+        left = (image.width - crop_width) // 2
+        image = image.crop((left, 0, left + crop_width, image.height))
+    else:
+        crop_height = int(image.width / target_ratio)
+        top = (image.height - crop_height) // 2
+        image = image.crop((0, top, image.width, top + crop_height))
+    return image.resize((width, height), Image.Resampling.LANCZOS)
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     cleanup_old_temp_files()
     return {
         "status": "ok",
         "storage": "stateless-temp-24h",
+        "device": torch_device(),
         "ocr_engine": os.getenv("ADAPTIFAI_OCR_ENGINE", "easyocr"),
+        "ocr_max_side": os.getenv("ADAPTIFAI_OCR_MAX_SIDE", "1280" if is_cpu_runtime() else "2200"),
         "ocr": os.getenv("ADAPTIFAI_TROCR_MODEL", "microsoft/trocr-base-printed"),
         "inpainting_backend": os.getenv("ADAPTIFAI_INPAINT_BACKEND", "stable-diffusion"),
         "inpainting": os.getenv("ADAPTIFAI_INPAINT_MODEL", "runwayml/stable-diffusion-inpainting"),
+        "resize_fit": os.getenv("ADAPTIFAI_RESIZE_FIT", "cover"),
     }
 
 

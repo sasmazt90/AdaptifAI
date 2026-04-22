@@ -20,17 +20,28 @@ create index if not exists credit_transactions_user_created_idx
 
 alter table public.credit_accounts enable row level security;
 alter table public.credit_transactions enable row level security;
+alter table public.credit_accounts force row level security;
+alter table public.credit_transactions force row level security;
+
+revoke all on public.credit_accounts from anon, authenticated;
+revoke all on public.credit_transactions from anon, authenticated;
+revoke all on sequence public.credit_transactions_id_seq from anon, authenticated;
+
+grant select on public.credit_accounts to authenticated;
+grant select on public.credit_transactions to authenticated;
 
 drop policy if exists "Users can read own credit account" on public.credit_accounts;
 create policy "Users can read own credit account"
   on public.credit_accounts
   for select
+  to authenticated
   using (lower(user_id) = lower((select auth.email())));
 
 drop policy if exists "Users can read own credit transactions" on public.credit_transactions;
 create policy "Users can read own credit transactions"
   on public.credit_transactions
   for select
+  to authenticated
   using (lower(user_id) = lower((select auth.email())));
 
 create or replace function public.adjust_credits(
@@ -85,3 +96,8 @@ begin
   return new_balance;
 end;
 $$;
+
+revoke all on function public.adjust_credits(text, integer, text, text, text) from public;
+revoke all on function public.adjust_credits(text, integer, text, text, text) from anon;
+revoke all on function public.adjust_credits(text, integer, text, text, text) from authenticated;
+grant execute on function public.adjust_credits(text, integer, text, text, text) to service_role;
