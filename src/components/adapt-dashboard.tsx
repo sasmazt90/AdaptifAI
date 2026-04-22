@@ -330,7 +330,7 @@ function LandingPage({
 }
 
 function Creative({ placement, copy, mode, x, y, opacity, scale, fit }: { placement: Placement; copy: string; mode: Mode; x: number; y: number; opacity: number; scale: number; fit: FitMode }) {
-  const box = placement.ratio === "9:16" ? { x: 9 + x, y: 28 + y, width: 65, height: 24 } : { x: 8 + x, y: 30 + y, width: 62, height: 26 };
+  const box = placement.ratio === "9:16" ? { x: 10 + x, y: 30 + y, width: 62, height: 18 } : { x: 9 + x, y: 32 + y, width: 58, height: 20 };
   return (
     <div className="relative overflow-hidden bg-[#f0d553]" style={{ aspectRatio: `${placement.width} / ${placement.height}` }}>
       <div
@@ -340,9 +340,9 @@ function Creative({ placement, copy, mode, x, y, opacity, scale, fit }: { placem
       <div className="absolute left-[8%] top-[12%] h-[18%] w-[28%] rounded-[50%] bg-white/80" />
       <div className="absolute bottom-[10%] right-[8%] h-[28%] w-[44%] bg-[#ee4d6a]/80" />
       <div className="absolute left-[12%] top-[22%] h-[24%] w-[58%] rounded bg-[#ff4d4d]/20" style={{ opacity: opacity / 100 }} />
-      <div className="absolute rounded-md border border-[#111] bg-white/92 p-3 shadow-lg" style={{ left: `${box.x}%`, top: `${box.y}%`, width: `${box.width}%`, minHeight: `${box.height}%` }}>
-        <p className="text-[10px] font-bold uppercase">{cleanCopy(copy || sampleCopy[mode])}</p>
-        <p className="mt-1 text-[9px] leading-4">{mode === "adapt" ? "Translated copy stays inside text bounds." : "Resize keeps CTA and visual focus visible."}</p>
+      <div className="absolute flex flex-col justify-center" style={{ left: `${box.x}%`, top: `${box.y}%`, width: `${box.width}%`, minHeight: `${box.height}%` }}>
+        <p className="max-w-full text-[clamp(10px,2.2vw,24px)] font-black uppercase leading-tight text-[#111] [text-shadow:0_1px_0_rgba(255,255,255,0.75)]">{cleanCopy(copy || sampleCopy[mode])}</p>
+        <p className="mt-1 max-w-[72%] text-[clamp(8px,1.1vw,13px)] font-semibold leading-tight text-[#26302d] [text-shadow:0_1px_0_rgba(255,255,255,0.65)]">{mode === "adapt" ? "Localized copy preview" : "Resize-safe preview"}</p>
       </div>
       {placement.safeZones.map((zone) => (
         <span key={zone.id} className="absolute border border-dashed border-[#ff4d4d] bg-[#ff4d4d]/14" style={{ left: `${zone.x}%`, top: `${zone.y}%`, width: `${zone.width}%`, height: `${zone.height}%` }} title={zone.label} />
@@ -370,41 +370,41 @@ function Preview({ placement, mode, device, copy, x, y, opacity, scale, fit }: {
   let shell: ReactNode = null;
 
   if (placement.platform === "META") shell = (
-    <div className={["mx-auto overflow-hidden rounded-md border bg-white shadow-xl", device === "mobile" ? "w-[320px]" : "w-full max-w-[700px]"].join(" ")}>
-      <div className="flex items-center gap-3 border-b px-4 py-3"><span className="grid h-8 w-8 place-items-center rounded-full bg-[#1877f2] font-black text-white">f</span><div><p className="text-xs font-bold">AdaptifAI Sponsored</p><p className="text-[10px] text-[#666]">{placement.label} placement preview</p></div><button type="button" className="ml-auto rounded-full border px-3 py-1 text-[10px] font-bold text-[#1877f2]">Follow</button></div>
-      <div className="p-3">{creative}</div><div className="flex justify-around border-t px-4 py-3 text-xs font-bold text-[#555]"><span>Like</span><span>Comment</span><span>Share</span></div>
+    <div className={["mx-auto overflow-hidden rounded-md border bg-white shadow-xl", device === "mobile" ? "w-[230px]" : "w-full max-w-[560px]"].join(" ")}>
+      <div className="flex items-center gap-2 border-b px-3 py-2"><span className="grid h-7 w-7 place-items-center rounded-full bg-[#1877f2] text-xs font-black text-white">f</span><div><p className="text-[11px] font-bold">AdaptifAI Sponsored</p><p className="text-[9px] text-[#666]">{placement.label} placement preview</p></div><button type="button" className="ml-auto rounded-full border px-2 py-1 text-[9px] font-bold text-[#1877f2]">Follow</button></div>
+      <div className="p-2">{creative}</div><div className="flex justify-around border-t px-3 py-2 text-[10px] font-bold text-[#555]"><span>Like</span><span>Comment</span><span>Share</span></div>
     </div>
   );
   else if (placement.platform === "TIKTOK") shell = (
-    <div className="relative mx-auto w-[320px] overflow-hidden rounded-[26px] bg-[#0c0c0f] p-3 text-white shadow-2xl">
-      <div className="overflow-hidden rounded-[20px]">{creative}</div><div className="absolute right-5 top-[36%] grid gap-3 text-center text-[10px] font-bold">{["+", "Like", "Share", "Audio"].map((i) => <span key={i} className="grid h-9 w-9 place-items-center rounded-full bg-white/20">{i}</span>)}</div>
-      <div className="absolute bottom-6 left-6 right-16 text-xs"><p className="font-bold">@brand</p><p className="text-white/80">Localized campaign copy</p></div>
+    <div className="relative mx-auto w-[230px] overflow-hidden rounded-[22px] bg-[#0c0c0f] p-2 text-white shadow-2xl">
+      <div className="overflow-hidden rounded-[16px]">{creative}</div><div className="absolute right-4 top-[36%] grid gap-2 text-center text-[8px] font-bold">{["+", "Like", "Share", "Audio"].map((i) => <span key={i} className="grid h-7 w-7 place-items-center rounded-full bg-white/20">{i}</span>)}</div>
+      <div className="absolute bottom-4 left-4 right-14 text-[10px]"><p className="font-bold">@brand</p><p className="text-white/80">Localized campaign copy</p></div>
     </div>
   );
   else if (placement.overlay === "youtube") shell = (
-    <div className={["mx-auto overflow-hidden rounded-md bg-[#0f0f0f] text-white shadow-xl", device === "mobile" ? "w-[320px]" : "w-full max-w-[760px]"].join(" ")}>
-      <div className="flex justify-between px-4 py-3 text-xs font-bold"><span>YouTube</span><span>Ad preview</span></div><div className="px-3">{creative}</div><div className="px-3 py-3"><div className="h-1 rounded bg-white/25"><div className="h-1 w-1/3 rounded bg-[#ff0033]" /></div><div className="mt-3 flex justify-between text-[11px] text-white/75"><span>0:06</span><span>Skip ad</span></div></div>
+    <div className={["mx-auto overflow-hidden rounded-md bg-[#0f0f0f] text-white shadow-xl", device === "mobile" ? "w-[230px]" : "w-full max-w-[560px]"].join(" ")}>
+      <div className="flex justify-between px-3 py-2 text-[10px] font-bold"><span>YouTube</span><span>Ad preview</span></div><div className="px-2">{creative}</div><div className="px-2 py-2"><div className="h-1 rounded bg-white/25"><div className="h-1 w-1/3 rounded bg-[#ff0033]" /></div><div className="mt-2 flex justify-between text-[9px] text-white/75"><span>0:06</span><span>Skip ad</span></div></div>
     </div>
   );
   else if (placement.platform === "LINKEDIN") shell = (
-    <div className={["mx-auto overflow-hidden rounded-md border bg-white shadow-xl", device === "mobile" ? "w-[320px]" : "w-full max-w-[690px]"].join(" ")}>
-      <div className="flex items-center gap-3 border-b px-4 py-3"><span className="grid h-9 w-9 place-items-center rounded bg-[#0a66c2] font-black text-white">in</span><div><p className="text-xs font-bold">AdaptifAI</p><p className="text-[10px] text-[#666]">Promoted</p></div></div><div className="p-3">{creative}</div><div className="flex justify-around border-t px-4 py-3 text-xs font-bold text-[#555]"><span>Like</span><span>Comment</span><span>Send</span></div>
+    <div className={["mx-auto overflow-hidden rounded-md border bg-white shadow-xl", device === "mobile" ? "w-[230px]" : "w-full max-w-[560px]"].join(" ")}>
+      <div className="flex items-center gap-2 border-b px-3 py-2"><span className="grid h-7 w-7 place-items-center rounded bg-[#0a66c2] text-xs font-black text-white">in</span><div><p className="text-[11px] font-bold">AdaptifAI</p><p className="text-[9px] text-[#666]">Promoted</p></div></div><div className="p-2">{creative}</div><div className="flex justify-around border-t px-3 py-2 text-[10px] font-bold text-[#555]"><span>Like</span><span>Comment</span><span>Send</span></div>
     </div>
   );
   else if (placement.platform === "SNAPCHAT") shell = (
-    <div className="relative mx-auto w-[320px] overflow-hidden rounded-[26px] bg-[#fffc00] p-3 shadow-2xl"><div className="overflow-hidden rounded-[20px]">{creative}</div><div className="absolute left-6 right-6 top-6 flex justify-between text-xs font-bold"><span>Story Ad</span><span>...</span></div><div className="absolute bottom-6 left-8 right-8 rounded-full bg-white px-4 py-2 text-center text-xs font-black">Swipe up</div></div>
+    <div className="relative mx-auto w-[230px] overflow-hidden rounded-[22px] bg-[#fffc00] p-2 shadow-2xl"><div className="overflow-hidden rounded-[16px]">{creative}</div><div className="absolute left-4 right-4 top-4 flex justify-between text-[10px] font-bold"><span>Story Ad</span><span>...</span></div><div className="absolute bottom-4 left-6 right-6 rounded-full bg-white px-3 py-2 text-center text-[10px] font-black">Swipe up</div></div>
   );
   else shell = (
-    <div className={["mx-auto overflow-hidden rounded-md border bg-white shadow-xl", device === "mobile" ? "w-[340px]" : "w-full max-w-[820px]"].join(" ")}>
-      <div className="flex items-center gap-2 border-b bg-[#f7f7f7] px-4 py-3"><span className="h-3 w-3 rounded-full bg-[#ee4d6a]" /><span className="h-3 w-3 rounded-full bg-[#f0d553]" /><span className="h-3 w-3 rounded-full bg-[#38b6a6]" /><span className="ml-3 rounded bg-white px-3 py-1 text-[10px] text-[#666]">news.example/ad-preview</span></div>
-      <div className={["grid gap-4 p-4", device === "desktop" && placement.height > 120 ? "grid-cols-[1fr_300px]" : ""].join(" ")}><div><p className="text-xs font-black uppercase text-[#0f766e]">{placement.platform === "GOOGLE" ? "Google Display Network" : "Native publisher"}</p><h3 className="mt-2 text-xl font-semibold">{placement.platform === "GOOGLE" ? "Display inventory preview" : "Article layout"}</h3><div className="mt-4 space-y-2"><div className="h-3 rounded bg-[#ededed]" /><div className="h-3 w-5/6 rounded bg-[#ededed]" /><div className="h-3 w-2/3 rounded bg-[#ededed]" /></div></div><div><p className="mb-1 text-right text-[10px] font-semibold uppercase text-[#777]">Advertisement</p>{creative}</div></div>
+    <div className={["mx-auto overflow-hidden rounded-md border bg-white shadow-xl", device === "mobile" ? "w-[245px]" : "w-full max-w-[620px]"].join(" ")}>
+      <div className="flex items-center gap-2 border-b bg-[#f7f7f7] px-3 py-2"><span className="h-2.5 w-2.5 rounded-full bg-[#ee4d6a]" /><span className="h-2.5 w-2.5 rounded-full bg-[#f0d553]" /><span className="h-2.5 w-2.5 rounded-full bg-[#38b6a6]" /><span className="ml-2 rounded bg-white px-2 py-1 text-[9px] text-[#666]">news.example/ad-preview</span></div>
+      <div className={["grid gap-3 p-3", device === "desktop" && placement.height > 120 ? "grid-cols-[1fr_240px]" : ""].join(" ")}><div><p className="text-[10px] font-black uppercase text-[#0f766e]">{placement.platform === "GOOGLE" ? "Google Display Network" : "Native publisher"}</p><h3 className="mt-1 text-base font-semibold">{placement.platform === "GOOGLE" ? "Display inventory preview" : "Article layout"}</h3><div className="mt-3 space-y-1.5"><div className="h-2.5 rounded bg-[#ededed]" /><div className="h-2.5 w-5/6 rounded bg-[#ededed]" /><div className="h-2.5 w-2/3 rounded bg-[#ededed]" /></div></div><div><p className="mb-1 text-right text-[9px] font-semibold uppercase text-[#777]">Advertisement</p>{creative}</div></div>
     </div>
   );
 
   return (
-    <div className="flex min-h-[560px] flex-col justify-center gap-4 bg-[#f3f0e8] p-5">
+    <div className="flex min-h-[360px] max-h-[calc(100svh-220px)] flex-col justify-center gap-3 overflow-hidden bg-[#f3f0e8] p-3">
       {shell}
-      <div className="mx-auto flex w-full max-w-[760px] justify-between rounded-md bg-[#111] px-4 py-3 text-xs text-white">
+      <div className="mx-auto flex w-full max-w-[620px] justify-between rounded-md bg-[#111] px-3 py-2 text-[10px] text-white">
         <span>{placement.platform} / {placement.label} / {placement.width}x{placement.height}</span>
         <span className={warnings.length ? "text-[#ffcf4a]" : "text-[#7ee1c6]"}>{warnings.length ? `${warnings.length} safe-zone warning` : "Safe zone clear"}</span>
       </div>
