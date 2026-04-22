@@ -370,6 +370,8 @@ def inpaint_text_regions(paths: list[Path], blocks: list[TextBlock], job_dir: Pa
 
     output = job_dir / "inpainted-background.jpg"
     mode = os.getenv("ADAPTIFAI_INPAINT_BACKEND", "stable-diffusion").lower()
+    if mode == "stable-diffusion" and torch_device() == "cpu" and os.getenv("ADAPTIFAI_ALLOW_CPU_STABLE_DIFFUSION") != "1":
+        mode = "opencv"
 
     if mode == "opencv":
         inpaint_with_opencv(image, mask).save(output, quality=92)

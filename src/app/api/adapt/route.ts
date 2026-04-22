@@ -14,7 +14,10 @@ export async function POST(request: NextRequest) {
       body: formData,
     });
 
-    const payload = await response.json();
+    const contentType = response.headers.get("content-type") ?? "";
+    const payload = contentType.includes("application/json")
+      ? await response.json()
+      : { error: `Backend returned ${response.status}`, detail: await response.text() };
     if (response.ok) {
       const spend = spendCredits(userId, Number(payload.credits_estimated ?? 0));
       if (!spend.ok) {

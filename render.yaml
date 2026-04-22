@@ -19,7 +19,7 @@ services:
       - key: ADAPTIFAI_INPAINT_MODEL
         value: runwayml/stable-diffusion-inpainting
       - key: ADAPTIFAI_INPAINT_BACKEND
-        value: stable-diffusion
+        value: opencv
       - key: ADAPTIFAI_INPAINT_MAX_SIDE
         value: "384"
       - key: ADAPTIFAI_INPAINT_STEPS
