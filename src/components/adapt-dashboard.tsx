@@ -14,11 +14,9 @@ import {
   Loader2,
   LogIn,
   LogOut,
-  Monitor,
   Move,
   Scissors,
   Shield,
-  Smartphone,
   Sparkles,
   Type,
   User,
@@ -72,7 +70,7 @@ function Brand() {
       </div>
       <div>
         <p className="text-xl font-black leading-5">AdaptifAI</p>
-        <p className="text-xs font-semibold uppercase text-[#0f766e]">Creative localization</p>
+        <p className="text-xs font-semibold uppercase text-[#0f766e]">Creative localization and resizing</p>
       </div>
     </div>
   );
@@ -412,12 +410,35 @@ function Preview({ placement, mode, device, copy, x, y, opacity, scale, fit }: {
   );
 }
 
+function LocalizePreview({ imageUrl }: { imageUrl?: string }) {
+  return (
+    <div className="flex min-h-[360px] max-h-[calc(100svh-220px)] items-center justify-center overflow-hidden bg-[#f3f0e8] p-4">
+      <div className="w-full max-w-[620px] overflow-hidden rounded-md border border-[#151515]/15 bg-white shadow-xl">
+        <div className="flex items-center justify-between border-b border-[#151515]/10 bg-[#faf9f5] px-3 py-2 text-[10px] font-semibold uppercase text-[#666]">
+          <span>Localized creative</span>
+          <span>Original ratio</span>
+        </div>
+        {imageUrl ? (
+          <div
+            aria-label="Localized output"
+            className="min-h-[320px] bg-[#f3f0e8] bg-contain bg-center bg-no-repeat"
+            style={{ backgroundImage: `url(${imageUrl})` }}
+          />
+        ) : (
+          <div className="grid min-h-[320px] place-items-center bg-[linear-gradient(135deg,#f3f0e8_0%,#f8d56b_45%,#38b6a6_100%)]">
+            <div className="h-28 w-28 rounded-full bg-white/55" />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function AdaptDashboard() {
   const supabase = useMemo(() => getSupabaseBrowser(), []);
   const supabaseConfigured = hasSupabaseBrowserConfig();
   const grouped = useMemo(() => platformOrder.map((p) => [p, placements.filter((x) => x.platform === p)] as const), []);
   const [mode, setMode] = useState<Mode>("adapt");
-  const [device, setDevice] = useState<Device>("mobile");
   const [selectedPlacementIds, setSelectedPlacementIds] = useState(["meta-stories", "tiktok-in-feed", "gdn-300x250"]);
   const [activePlacementId, setActivePlacementId] = useState("meta-stories");
   const [selectedLanguages, setSelectedLanguages] = useState(["DE", "TR", "AR"]);
@@ -454,8 +475,14 @@ export function AdaptDashboard() {
   const currentUserEmail = authUser?.email ?? userId;
   const isAdmin = currentUserEmail.toLowerCase() === (process.env.NEXT_PUBLIC_ADMIN_EMAIL ?? "tolgar@sasmaz.digital").toLowerCase();
   const billableLanguages = mode === "adapt" ? selectedLanguages.length : 1;
-  const estimatedRunCredits = estimateCredits(files.length, billableLanguages, selectedPlacementIds.length);
-  const canRun = files.length > 0 && selectedPlacementIds.length > 0 && (mode !== "adapt" || selectedLanguages.length > 0) && credits >= estimatedRunCredits;
+  const billablePlacements = mode === "adapt" ? 1 : selectedPlacementIds.length;
+  const estimatedRunCredits = estimateCredits(files.length, billableLanguages, billablePlacements);
+  const editCredits = 1;
+  const actionCredits = result ? editCredits : estimatedRunCredits;
+  const remainingAfterAction = credits - actionCredits;
+  const canRun = files.length > 0 && (mode === "adapt" || selectedPlacementIds.length > 0) && (mode !== "adapt" || selectedLanguages.length > 0) && credits >= estimatedRunCredits;
+  const canApplyCurrentEdit = Boolean(result) && credits >= editCredits;
+  const previewDevice = activePlacement.device === "desktop" ? "desktop" : "mobile";
 
   useEffect(() => {
     if (!supabase) return;
@@ -501,6 +528,7 @@ export function AdaptDashboard() {
   const switchMode = (next: Mode) => {
     setMode(next);
     setCopy(sampleCopy[next]);
+    setResult(null);
     setEditStatus(null);
     setError(null);
   };
@@ -519,7 +547,7 @@ export function AdaptDashboard() {
     formData.append("user_id", currentUserEmail);
     formData.append("target_languages", mode === "adapt" ? selectedLanguages.join(",") : "EN");
     formData.append("output_format", selectedFormat);
-    formData.append("placements", selectedPlacementIds.join(","));
+    formData.append("placements", mode === "adapt" ? "native-custom" : selectedPlacementIds.join(","));
     try {
       const response = await fetch("/api/adapt", { method: "POST", body: formData, headers: sessionToken ? { authorization: `Bearer ${sessionToken}` } : undefined });
       const payload = await response.json();
@@ -627,7 +655,7 @@ export function AdaptDashboard() {
           <Brand />
           <div className="flex items-center gap-1 rounded-md bg-[#f1eee6] p-1">
             {(["adapt", "resize"] as const).map((item) => (
-              <button key={item} type="button" onClick={() => switchMode(item)} className={["h-9 rounded px-4 text-sm font-semibold capitalize transition", mode === item ? "bg-[#151515] text-white" : "text-[#555] hover:bg-white"].join(" ")}>{item}</button>
+              <button key={item} type="button" onClick={() => switchMode(item)} className={["h-9 rounded px-4 text-sm font-semibold transition", mode === item ? "bg-[#151515] text-white" : "text-[#555] hover:bg-white"].join(" ")}>{item === "adapt" ? "Localize" : "Resize"}</button>
             ))}
           </div>
           <div className="flex items-center gap-3">
@@ -639,23 +667,106 @@ export function AdaptDashboard() {
         </div>
       </header>
 
-      <form onSubmit={runProcess} className="mx-auto grid max-w-[1560px] gap-4 px-5 py-5 xl:grid-cols-[380px_minmax(560px,1fr)_380px]">
+      <form onSubmit={runProcess} className="mx-auto grid max-w-[1560px] gap-4 px-5 py-5 xl:grid-cols-[380px_minmax(560px,1fr)_340px]">
         <aside className="space-y-4">
           <section className="rounded-md border border-[#151515]/10 bg-white p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div><p className="text-xs font-semibold uppercase text-[#0f766e]">{mode} workspace</p><h1 className="text-xl font-semibold">{mode === "adapt" ? "Translate and restore" : "Resize placements"}</h1></div>
-              <button type="submit" disabled={isRunning || !canRun} className="flex h-10 min-w-28 items-center justify-center gap-2 rounded-md bg-[#ee4d6a] px-3 text-sm font-semibold text-white disabled:bg-[#d6d0c4]">{isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}Run</button>
-            </div>
-            <div className="mt-4 rounded-md border border-[#151515]/10 bg-[#faf9f5] p-3 text-sm">
-              <div className="flex items-center justify-between gap-3">
-                <span className="font-semibold">Estimated run cost</span>
-                <span className={["font-black", credits < estimatedRunCredits ? "text-[#b42318]" : "text-[#0f766e]"].join(" ")}>{estimatedRunCredits} credits</span>
+            <p className="text-xs font-semibold uppercase text-[#0f766e]">{mode === "adapt" ? "Localize workspace" : "Resize workspace"}</p>
+            <h1 className="text-xl font-semibold">{mode === "adapt" ? "Translate and restore" : "Resize placements"}</h1>
+            <p className="mt-2 text-xs text-[#666]">{result ? "Modify the generated result, then apply a paid edit pass from the action panel." : mode === "adapt" ? "Upload one or more creatives, choose target languages and export format." : "Upload a creative, then choose platform dimensions to resize."}</p>
+          </section>
+
+          {result ? (
+            <section className="rounded-md border border-[#151515]/10 bg-white p-4">
+              <div className="mb-3 flex items-center justify-between"><h2 className="font-semibold">{mode === "adapt" ? "Translation Editor" : "Resize Modifier"}</h2>{mode === "adapt" ? <Type className="h-4 w-4 text-[#0f766e]" /> : <Frame className="h-4 w-4 text-[#0f766e]" />}</div>
+              {mode === "adapt" ? (
+                <>
+                  <textarea className="min-h-32 w-full resize-none rounded-md border border-[#151515]/10 bg-[#faf9f5] p-3 text-sm outline-none focus:border-[#0f766e]" value={copy} onChange={(e) => setCopy(e.target.value)} aria-label="Manual translation override" />
+                  <div className="mt-3 grid grid-cols-2 gap-2">{[["Preserve bold", Type], ["Move text", Move], ["Mask cleanup", Scissors], ["Fit bounds", Frame]].map(([label, Icon]) => <button key={String(label)} type="button" className="flex h-11 items-center gap-2 rounded-md border border-[#151515]/10 bg-[#faf9f5] px-3 text-sm font-semibold"><Icon className="h-4 w-4 text-[#0f766e]" />{String(label)}</button>)}</div>
+                </>
+              ) : (
+                <>
+                  <div className="grid grid-cols-3 gap-1 rounded-md bg-[#f1eee6] p-1">{(["contain", "cover", "fill"] as const).map((item) => <button key={item} type="button" onClick={() => setFit(item)} className={["h-9 rounded text-xs font-semibold capitalize", fit === item ? "bg-[#151515] text-white" : "text-[#555] hover:bg-white"].join(" ")}>{item}</button>)}</div>
+                  <div className="mt-3 space-y-2 text-xs font-semibold text-[#555]"><label className="block">Creative scale<input className="w-full accent-[#0f766e]" type="range" min="70" max="140" value={scale} onChange={(e) => setScale(Number(e.target.value))} /></label></div>
+                </>
+              )}
+              <div className="mt-3 space-y-2 text-xs font-semibold text-[#555]">
+                <label className="block">Text X<input className="w-full accent-[#0f766e]" type="range" min="-24" max="24" value={x} onChange={(e) => setX(Number(e.target.value))} /></label>
+                <label className="block">Text Y<input className="w-full accent-[#0f766e]" type="range" min="-24" max="24" value={y} onChange={(e) => setY(Number(e.target.value))} /></label>
+                <label className="block">Mask opacity<input className="w-full accent-[#ee4d6a]" type="range" min="0" max="70" value={opacity} onChange={(e) => setOpacity(Number(e.target.value))} /></label>
               </div>
-              <p className="mt-1 text-xs text-[#666]">
-                {mode === "adapt" ? `${Math.max(1, files.length)} file x ${Math.max(1, selectedLanguages.length)} language x ${Math.max(1, selectedPlacementIds.length)} placement` : `${Math.max(1, files.length)} file x ${Math.max(1, selectedPlacementIds.length)} placement`}
-              </p>
-              {credits < estimatedRunCredits && <p className="mt-2 text-xs font-semibold text-[#b42318]">Add credits before starting this run.</p>}
+              <canvas ref={canvasRef} width={300} height={150} className="mt-3 h-auto w-full rounded-md border border-[#151515]/10" />
+              {editStatus && <p className="mt-3 rounded-md bg-[#e8f7f1] p-3 text-sm text-[#064e46]">{editStatus}</p>}
+              <button type="button" onClick={() => { setResult(null); setEditStatus(null); setError(null); }} className="mt-3 h-10 w-full rounded-md border border-[#151515]/15 bg-white text-sm font-semibold">{mode === "adapt" ? "Localize another creative" : "Resize another creative"}</button>
+            </section>
+          ) : (
+            <>
+              <section className="rounded-md border border-[#151515]/10 bg-white p-4">
+                <div className="mb-4 flex items-center justify-between"><h2 className="font-semibold">Upload</h2><FileArchive className="h-4 w-4 text-[#0f766e]" /></div>
+                <label className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-[#151515]/30 bg-[#f6f1e7] p-4 text-center hover:border-[#0f766e]"><CloudUpload className="mb-3 h-8 w-8 text-[#0f766e]" /><span className="text-sm font-semibold">Upload PNG, WebP, JPG, JPEG, PDF or ZIP</span><span className="mt-1 text-xs text-[#595959]">Multiple files supported</span><input className="sr-only" multiple accept=".png,.webp,.jpg,.jpeg,.pdf,.zip" type="file" onChange={(e) => setFiles(Array.from(e.target.files ?? []))} /></label>
+                <div className="mt-3 space-y-2">{(files.length ? files : [{ name: "No files selected", size: 0 } as File]).map((file) => <div key={`${file.name}-${file.size}`} className="flex items-center justify-between rounded-md bg-[#faf9f5] px-3 py-2 text-xs"><span className="max-w-[220px] truncate">{file.name}</span><span>{file.size ? `${Math.ceil(file.size / 1024)} KB` : ""}</span></div>)}</div>
+              </section>
+
+              {mode === "adapt" ? (
+                <>
+                  <Collapsible title="Languages" icon={<Languages className="h-4 w-4 text-[#0f766e]" />}>
+                    <div className="grid grid-cols-2 gap-2">{languages.map((language) => { const selected = selectedLanguages.includes(language.code); return <button key={language.code} type="button" onClick={() => setSelectedLanguages((current) => selected ? current.filter((code) => code !== language.code) : [...current, language.code])} className={["flex h-10 items-center justify-between rounded-md border px-3 text-sm", selected ? "border-[#0f766e] bg-[#dff8ef] text-[#064e46]" : "border-[#151515]/10 bg-[#faf9f5]"].join(" ")}>{language.code}{selected && <Check className="h-4 w-4" />}</button>; })}</div>
+                  </Collapsible>
+                  <Collapsible title="Output Format" icon={<Download className="h-4 w-4 text-[#0f766e]" />}>
+                    <div className="grid grid-cols-5 gap-1 rounded-md bg-[#f1eee6] p-1">{outputFormats.map((format) => <button key={format} type="button" onClick={() => setSelectedFormat(format)} className={["h-9 rounded text-xs font-semibold", selectedFormat === format ? "bg-[#151515] text-white" : "text-[#555] hover:bg-white"].join(" ")}>{format}</button>)}</div>
+                  </Collapsible>
+                </>
+              ) : (
+                <Collapsible title="Dimensions" icon={<Frame className="h-4 w-4 text-[#0f766e]" />}>
+                  <div className="max-h-[560px] space-y-4 overflow-auto pr-1">{grouped.map(([platform, items]) => <div key={platform}><p className="mb-2 text-xs font-semibold uppercase text-[#777]">{platform}</p><div className="space-y-2">{items.map((placement) => { const selected = selectedPlacementIds.includes(placement.id); return <label key={placement.id} className={["flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-sm", selected ? "border-[#0f766e] bg-[#e8f7f1]" : "border-[#151515]/10 bg-[#faf9f5]"].join(" ")}><input type="checkbox" className="h-4 w-4 accent-[#0f766e]" checked={selected} onChange={() => togglePlacement(placement.id)} /><span className="min-w-0 flex-1"><span className="block font-semibold">{placement.label}</span><span className="text-xs text-[#666]">{placement.ratio} / {placement.width}x{placement.height}</span></span></label>; })}</div></div>)}</div>
+                </Collapsible>
+              )}
+            </>
+          )}
+        </aside>
+
+        <section className="overflow-hidden rounded-md border border-[#151515]/10 bg-white">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#151515]/10 px-4 py-3">
+            <div><h2 className="font-semibold">{mode === "adapt" ? "Localize Result" : "Resize Result"}</h2><p className="text-xs text-[#666]">{mode === "adapt" ? "Localized creative preview without platform template chrome" : "Selected placement rendered inside platform UI with safe-zone masks"}</p></div>
+            {mode === "resize" && (
+              <select className="h-9 rounded-md border border-[#151515]/15 bg-white px-3 text-xs font-semibold outline-none focus:border-[#0f766e]" value={activePlacementId} onChange={(e) => setActivePlacementId(e.target.value)}>
+                {(selectedPlacementIds.length ? placements.filter((placement) => selectedPlacementIds.includes(placement.id)) : placements).map((placement) => <option key={placement.id} value={placement.id}>{placement.platform} / {placement.label} / {placement.width}x{placement.height}</option>)}
+              </select>
+            )}
+          </div>
+          {mode === "adapt" ? (
+            <LocalizePreview imageUrl={result?.outputs[0]?.download_url} />
+          ) : (
+            <Preview placement={activePlacement} mode={mode} device={previewDevice} copy={copy} x={x} y={y} opacity={opacity} scale={scale} fit={fit} />
+          )}
+          <div className="border-t border-[#151515]/10 p-4">
+            {error && <div className="mb-3 flex gap-2 rounded-md bg-[#fff0d8] p-3 text-sm text-[#6b3b00]"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />{error}</div>}
+            {result ? (
+              <div className="space-y-3 text-sm">
+                <div className="rounded-md bg-[#e8f7f1] p-3">Job {result.job_id} completed / {result.outputs.length} exports</div>
+                <div className="grid gap-2 sm:grid-cols-2">{result.outputs.slice(0, 6).map((output) => <a key={output.filename} href={output.download_url} className="flex items-center justify-between rounded-md border border-[#151515]/10 px-3 py-2 hover:border-[#0f766e]"><span className="truncate">{output.filename}</span><Download className="h-4 w-4 text-[#0f766e]" /></a>)}</div>
+              </div>
+            ) : (
+              <p className="text-sm text-[#666]">{mode === "adapt" ? "Localized image output will appear here after translation and background restoration." : "Selected dimension exports and platform-specific previews will appear here."}</p>
+            )}
+          </div>
+        </section>
+
+        <aside className="space-y-4">
+          <section className="sticky top-24 rounded-md border border-[#151515]/10 bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center justify-between"><h2 className="font-semibold">Action</h2><Sparkles className="h-4 w-4 text-[#0f766e]" /></div>
+            <div className="space-y-2 text-sm">
+              {[["Operation", result ? "Modify result" : mode === "adapt" ? "Localize" : "Resize"], ["Files", files.length], ["Languages", billableLanguages], ["Placements", mode === "adapt" ? "Not used" : selectedPlacementIds.length], ["Output", selectedFormat]].map(([label, value]) => <div key={String(label)} className="flex justify-between rounded-md bg-[#faf9f5] px-3 py-2"><span>{label}</span><span className="font-semibold capitalize">{value}</span></div>)}
             </div>
+            <div className="mt-4 rounded-md bg-[#151515] p-3 text-white">
+              <div className="flex justify-between text-sm"><span>Credits to use</span><span className="font-black">{actionCredits}</span></div>
+              <div className="mt-2 flex justify-between text-xs text-white/75"><span>Current balance</span><span>{credits}</span></div>
+              <div className={["mt-1 flex justify-between text-xs font-semibold", remainingAfterAction < 0 ? "text-[#ffcf4a]" : "text-[#7ee1c6]"].join(" ")}><span>Remaining after action</span><span>{remainingAfterAction}</span></div>
+            </div>
+            <button type={result ? "button" : "submit"} onClick={result ? applyManualEdit : undefined} disabled={result ? isApplyingEdit || !canApplyCurrentEdit : isRunning || !canRun} className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-md bg-[#ee4d6a] text-sm font-semibold text-white disabled:bg-[#d6d0c4]">
+              {result ? (isApplyingEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />) : isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              {result ? "Apply edit / use 1 credit" : mode === "adapt" ? "Run Localize" : "Run Resize"}
+            </button>
+            {remainingAfterAction < 0 && <p className="mt-3 text-xs font-semibold text-[#b42318]">Add credits before starting this action.</p>}
           </section>
 
           {isAdmin && (
@@ -668,80 +779,6 @@ export function AdaptDashboard() {
               {adminStatus && <p className="mt-3 rounded-md bg-[#e8f7f1] p-3 text-sm text-[#064e46]">{adminStatus}</p>}
             </section>
           )}
-
-          <section className="rounded-md border border-[#151515]/10 bg-white p-4">
-            <div className="mb-4 flex items-center justify-between"><h2 className="font-semibold">Upload</h2><FileArchive className="h-4 w-4 text-[#0f766e]" /></div>
-            <label className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-[#151515]/30 bg-[#f6f1e7] p-4 text-center hover:border-[#0f766e]"><CloudUpload className="mb-3 h-8 w-8 text-[#0f766e]" /><span className="text-sm font-semibold">Upload PNG, WebP, JPG, JPEG, PDF or ZIP</span><span className="mt-1 text-xs text-[#595959]">Multiple files supported</span><input className="sr-only" multiple accept=".png,.webp,.jpg,.jpeg,.pdf,.zip" type="file" onChange={(e) => setFiles(Array.from(e.target.files ?? []))} /></label>
-            <div className="mt-3 space-y-2">{(files.length ? files : [{ name: "No files selected", size: 0 } as File]).map((file) => <div key={`${file.name}-${file.size}`} className="flex items-center justify-between rounded-md bg-[#faf9f5] px-3 py-2 text-xs"><span className="max-w-[220px] truncate">{file.name}</span><span>{file.size ? `${Math.ceil(file.size / 1024)} KB` : ""}</span></div>)}</div>
-          </section>
-
-          {mode === "adapt" ? (
-            <>
-              <Collapsible title="Languages" icon={<Languages className="h-4 w-4 text-[#0f766e]" />}>
-                <div className="grid grid-cols-2 gap-2">{languages.map((language) => { const selected = selectedLanguages.includes(language.code); return <button key={language.code} type="button" onClick={() => setSelectedLanguages((current) => selected ? current.filter((code) => code !== language.code) : [...current, language.code])} className={["flex h-10 items-center justify-between rounded-md border px-3 text-sm", selected ? "border-[#0f766e] bg-[#dff8ef] text-[#064e46]" : "border-[#151515]/10 bg-[#faf9f5]"].join(" ")}>{language.code}{selected && <Check className="h-4 w-4" />}</button>; })}</div>
-              </Collapsible>
-              <Collapsible title="Output Format" icon={<Download className="h-4 w-4 text-[#0f766e]" />}>
-                <div className="grid grid-cols-5 gap-1 rounded-md bg-[#f1eee6] p-1">{outputFormats.map((format) => <button key={format} type="button" onClick={() => setSelectedFormat(format)} className={["h-9 rounded text-xs font-semibold", selectedFormat === format ? "bg-[#151515] text-white" : "text-[#555] hover:bg-white"].join(" ")}>{format}</button>)}</div>
-              </Collapsible>
-            </>
-          ) : (
-            <Collapsible title="Dimensions" icon={<Frame className="h-4 w-4 text-[#0f766e]" />}>
-              <div className="max-h-[500px] space-y-4 overflow-auto pr-1">{grouped.map(([platform, items]) => <div key={platform}><p className="mb-2 text-xs font-semibold uppercase text-[#777]">{platform}</p><div className="space-y-2">{items.map((placement) => { const selected = selectedPlacementIds.includes(placement.id); return <label key={placement.id} className={["flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-sm", selected ? "border-[#0f766e] bg-[#e8f7f1]" : "border-[#151515]/10 bg-[#faf9f5]"].join(" ")}><input type="checkbox" className="h-4 w-4 accent-[#0f766e]" checked={selected} onChange={() => togglePlacement(placement.id)} /><span className="min-w-0 flex-1"><span className="block font-semibold">{placement.label}</span><span className="text-xs text-[#666]">{placement.ratio} / {placement.width}x{placement.height}</span></span></label>; })}</div></div>)}</div>
-            </Collapsible>
-          )}
-
-          <Collapsible title={mode === "adapt" ? "Placement Preview" : "Active Preview"} icon={<Frame className="h-4 w-4 text-[#0f766e]" />}>
-            <div className="max-h-[360px] space-y-4 overflow-auto pr-1">{grouped.map(([platform, items]) => <div key={platform}><p className="mb-2 text-xs font-semibold uppercase text-[#777]">{platform}</p><div className="space-y-2">{items.map((placement) => { const selected = selectedPlacementIds.includes(placement.id); const active = activePlacementId === placement.id; return <button key={placement.id} type="button" onClick={() => { setActivePlacementId(placement.id); if (mode === "adapt") togglePlacement(placement.id); }} className={["w-full rounded-md border px-3 py-2 text-left text-sm", active ? "border-[#ee4d6a] bg-[#fff0f3]" : selected ? "border-[#0f766e] bg-[#e8f7f1]" : "border-[#151515]/10 bg-[#faf9f5]"].join(" ")}><span className="block font-semibold">{placement.label}</span><span className="text-xs text-[#666]">{placement.ratio} / {placement.width}x{placement.height}</span></button>; })}</div></div>)}</div>
-          </Collapsible>
-        </aside>
-
-        <section className="overflow-hidden rounded-md border border-[#151515]/10 bg-white">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#151515]/10 px-4 py-3">
-            <div><h2 className="font-semibold">{mode === "adapt" ? "Adapt Result" : "Resize Result"}</h2><p className="text-xs text-[#666]">Selected placement rendered inside platform UI with safe-zone masks</p></div>
-            <div className="flex items-center gap-1 rounded-md bg-[#f1eee6] p-1">{(["mobile", "desktop"] as const).map((item) => <button key={item} type="button" onClick={() => setDevice(item)} className={["flex h-9 items-center gap-2 rounded px-3 text-xs font-semibold capitalize", device === item ? "bg-[#151515] text-white" : "text-[#555] hover:bg-white"].join(" ")}>{item === "mobile" ? <Smartphone className="h-4 w-4" /> : <Monitor className="h-4 w-4" />}{item}</button>)}</div>
-          </div>
-          <Preview placement={activePlacement} mode={mode} device={device} copy={copy} x={x} y={y} opacity={opacity} scale={scale} fit={fit} />
-          <div className="border-t border-[#151515]/10 p-4">
-            {error && <div className="mb-3 flex gap-2 rounded-md bg-[#fff0d8] p-3 text-sm text-[#6b3b00]"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />{error}</div>}
-            {result ? (
-              <div className="space-y-3 text-sm">
-                <div className="rounded-md bg-[#e8f7f1] p-3">Job {result.job_id} completed / {result.outputs.length} exports</div>
-                <div className="grid gap-2 sm:grid-cols-2">{result.outputs.slice(0, 6).map((output) => <a key={output.filename} href={output.download_url} className="flex items-center justify-between rounded-md border border-[#151515]/10 px-3 py-2 hover:border-[#0f766e]"><span className="truncate">{output.filename}</span><Download className="h-4 w-4 text-[#0f766e]" /></a>)}</div>
-              </div>
-            ) : (
-              <p className="text-sm text-[#666]">{mode === "adapt" ? "TrOCR extraction, GPT-4o translation, inpainting and localized exports will appear here." : "Selected dimension exports and platform-specific previews will appear here."}</p>
-            )}
-          </div>
-        </section>
-
-        <aside className="space-y-4">
-          <section className="rounded-md border border-[#151515]/10 bg-white p-4">
-            <div className="mb-3 flex items-center justify-between"><h2 className="font-semibold">{mode === "adapt" ? "Translation Editor" : "Resize Editor"}</h2>{mode === "adapt" ? <Type className="h-4 w-4 text-[#0f766e]" /> : <Frame className="h-4 w-4 text-[#0f766e]" />}</div>
-            {mode === "adapt" ? (
-              <>
-                <textarea className="min-h-32 w-full resize-none rounded-md border border-[#151515]/10 bg-[#faf9f5] p-3 text-sm outline-none focus:border-[#0f766e]" value={copy} onChange={(e) => setCopy(e.target.value)} aria-label="Manual translation override" />
-                <div className="mt-3 grid grid-cols-2 gap-2">{[["Preserve bold", Type], ["Move text", Move], ["Mask cleanup", Scissors], ["Fit bounds", Frame]].map(([label, Icon]) => <button key={String(label)} type="button" className="flex h-11 items-center gap-2 rounded-md border border-[#151515]/10 bg-[#faf9f5] px-3 text-sm font-semibold"><Icon className="h-4 w-4 text-[#0f766e]" />{String(label)}</button>)}</div>
-              </>
-            ) : (
-              <>
-                <div className="grid grid-cols-3 gap-1 rounded-md bg-[#f1eee6] p-1">{(["contain", "cover", "fill"] as const).map((item) => <button key={item} type="button" onClick={() => setFit(item)} className={["h-9 rounded text-xs font-semibold capitalize", fit === item ? "bg-[#151515] text-white" : "text-[#555] hover:bg-white"].join(" ")}>{item}</button>)}</div>
-                <div className="mt-3 space-y-2 text-xs font-semibold text-[#555]"><label className="block">Creative scale<input className="w-full accent-[#0f766e]" type="range" min="70" max="140" value={scale} onChange={(e) => setScale(Number(e.target.value))} /></label></div>
-              </>
-            )}
-            <div className="mt-3 space-y-2 text-xs font-semibold text-[#555]">
-              <label className="block">Text X<input className="w-full accent-[#0f766e]" type="range" min="-24" max="24" value={x} onChange={(e) => setX(Number(e.target.value))} /></label>
-              <label className="block">Text Y<input className="w-full accent-[#0f766e]" type="range" min="-24" max="24" value={y} onChange={(e) => setY(Number(e.target.value))} /></label>
-              <label className="block">Mask opacity<input className="w-full accent-[#ee4d6a]" type="range" min="0" max="70" value={opacity} onChange={(e) => setOpacity(Number(e.target.value))} /></label>
-            </div>
-            <canvas ref={canvasRef} width={300} height={150} className="mt-3 h-auto w-full rounded-md border border-[#151515]/10" />
-            <button type="button" onClick={applyManualEdit} disabled={isApplyingEdit} className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-md bg-[#0f766e] text-sm font-semibold text-white disabled:bg-[#d6d0c4]">{isApplyingEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}Apply edit / use 1 credit</button>
-            {editStatus && <p className="mt-3 rounded-md bg-[#e8f7f1] p-3 text-sm text-[#064e46]">{editStatus}</p>}
-          </section>
-
-          <section className="rounded-md border border-[#151515]/10 bg-white p-4">
-            <h2 className="mb-3 font-semibold">Selection Summary</h2>
-            <div className="space-y-2 text-sm">{[["Mode", mode], ["Files", files.length], ["Languages", billableLanguages], ["Placements", selectedPlacementIds.length], ["Preview", device], ["Output", selectedFormat], ["Run cost", `${estimatedRunCredits} credits`]].map(([label, value]) => <div key={String(label)} className="flex justify-between rounded-md bg-[#faf9f5] px-3 py-2"><span>{label}</span><span className="font-semibold capitalize">{value}</span></div>)}</div>
-          </section>
         </aside>
       </form>
 
