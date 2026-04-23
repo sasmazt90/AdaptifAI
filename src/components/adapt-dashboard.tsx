@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { estimateEditCredits, estimateLocalizeCredits, estimateResizeCredits } from "@/lib/credit-pricing";
+import { creditPricing, estimateEditCredits, estimateLocalizeCredits, estimateResizeCredits } from "@/lib/credit-pricing";
 import { languages, outputFormats, Placement, placements } from "@/lib/placements";
 import { getSupabaseBrowser, hasSupabaseBrowserConfig } from "@/lib/supabase-client";
 
@@ -37,6 +37,7 @@ type PipelineResult = {
   outputs: Array<{ filename: string; download_url: string; width: number; height: number }>;
   credits_remaining?: number;
 };
+type ReceiptLine = { label: string; formula: string; credits: number };
 
 const platformOrder = ["META", "TIKTOK", "GOOGLE", "SNAPCHAT", "LINKEDIN", "NATIVE/WEB"];
 const sampleCopy = {
@@ -361,45 +362,47 @@ function AdFrame({ placement, children }: { placement: Placement; children: Reac
 function Preview({ placement, mode, device, copy, x, y, opacity, scale, fit }: { placement: Placement; mode: Mode; device: Device; copy: string; x: number; y: number; opacity: number; scale: number; fit: FitMode }) {
   const box = placement.ratio === "9:16" ? { x: 9 + x, y: 28 + y, width: 65, height: 24 } : { x: 8 + x, y: 30 + y, width: 62, height: 26 };
   const warnings = placement.safeZones.filter((zone) => overlaps(zone, box));
-  const creative = <AdFrame placement={placement}><Creative placement={placement} mode={mode} copy={copy} x={x} y={y} opacity={opacity} scale={scale} fit={fit} /></AdFrame>;
+  const creative = <Creative placement={placement} mode={mode} copy={copy} x={x} y={y} opacity={opacity} scale={scale} fit={fit} />;
+  const framedCreative = <AdFrame placement={placement}>{creative}</AdFrame>;
   let shell: ReactNode = null;
 
   if (placement.platform === "META") shell = (
-    <div className={["mx-auto overflow-hidden rounded-md border bg-white shadow-xl", device === "mobile" ? "w-[230px]" : "w-full max-w-[560px]"].join(" ")}>
+    <div className={["mx-auto overflow-hidden rounded-md border bg-white shadow-xl", device === "mobile" ? "w-[190px]" : "w-full max-w-[500px]"].join(" ")}>
       <div className="flex items-center gap-2 border-b px-3 py-2"><span className="grid h-7 w-7 place-items-center rounded-full bg-[#1877f2] text-xs font-black text-white">f</span><div><p className="text-[11px] font-bold">AdaptifAI Sponsored</p><p className="text-[9px] text-[#666]">{placement.label} placement preview</p></div><button type="button" className="ml-auto rounded-full border px-2 py-1 text-[9px] font-bold text-[#1877f2]">Follow</button></div>
-      <div className="p-2">{creative}</div><div className="flex justify-around border-t px-3 py-2 text-[10px] font-bold text-[#555]"><span>Like</span><span>Comment</span><span>Share</span></div>
+      <div className="p-2">{framedCreative}</div><div className="flex justify-around border-t px-3 py-2 text-[10px] font-bold text-[#555]"><span>Like</span><span>Comment</span><span>Share</span></div>
     </div>
   );
   else if (placement.platform === "TIKTOK") shell = (
-    <div className="relative mx-auto w-[230px] overflow-hidden rounded-[22px] bg-[#0c0c0f] p-2 text-white shadow-2xl">
-      <div className="overflow-hidden rounded-[16px]">{creative}</div><div className="absolute right-4 top-[36%] grid gap-2 text-center text-[8px] font-bold">{["+", "Like", "Share", "Audio"].map((i) => <span key={i} className="grid h-7 w-7 place-items-center rounded-full bg-white/20">{i}</span>)}</div>
-      <div className="absolute bottom-4 left-4 right-14 text-[10px]"><p className="font-bold">@brand</p><p className="text-white/80">Localized campaign copy</p></div>
+    <div className="relative mx-auto w-[182px] overflow-hidden rounded-[24px] border-[7px] border-[#111] bg-[#0c0c0f] text-white shadow-2xl">
+      <div className="relative overflow-hidden rounded-[16px]">{creative}<div className="absolute left-3 top-3 rounded bg-black/45 px-2 py-1 text-[8px] font-bold">Sponsored</div></div>
+      <div className="absolute right-2 top-[33%] grid gap-2 text-center text-[8px] font-bold">{["+", "Like", "Share", "Audio"].map((i) => <span key={i} className="grid h-7 w-7 place-items-center rounded-full bg-black/35 backdrop-blur">{i}</span>)}</div>
+      <div className="absolute bottom-3 left-3 right-10 text-[9px]"><p className="font-bold">@brand</p><p className="text-white/85">Localized campaign copy</p><button className="mt-1 rounded-full bg-white px-2 py-1 text-[8px] font-black text-[#111]" type="button">Shop now</button></div>
     </div>
   );
   else if (placement.overlay === "youtube") shell = (
-    <div className={["mx-auto overflow-hidden rounded-md bg-[#0f0f0f] text-white shadow-xl", device === "mobile" ? "w-[230px]" : "w-full max-w-[560px]"].join(" ")}>
-      <div className="flex justify-between px-3 py-2 text-[10px] font-bold"><span>YouTube</span><span>Ad preview</span></div><div className="px-2">{creative}</div><div className="px-2 py-2"><div className="h-1 rounded bg-white/25"><div className="h-1 w-1/3 rounded bg-[#ff0033]" /></div><div className="mt-2 flex justify-between text-[9px] text-white/75"><span>0:06</span><span>Skip ad</span></div></div>
+    <div className={["mx-auto overflow-hidden rounded-md bg-[#0f0f0f] text-white shadow-xl", device === "mobile" ? "w-[190px]" : "w-full max-w-[500px]"].join(" ")}>
+      <div className="flex justify-between px-3 py-2 text-[10px] font-bold"><span>YouTube</span><span>Ad preview</span></div><div className="px-2">{framedCreative}</div><div className="px-2 py-2"><div className="h-1 rounded bg-white/25"><div className="h-1 w-1/3 rounded bg-[#ff0033]" /></div><div className="mt-2 flex justify-between text-[9px] text-white/75"><span>0:06</span><span>Skip ad</span></div></div>
     </div>
   );
   else if (placement.platform === "LINKEDIN") shell = (
-    <div className={["mx-auto overflow-hidden rounded-md border bg-white shadow-xl", device === "mobile" ? "w-[230px]" : "w-full max-w-[560px]"].join(" ")}>
-      <div className="flex items-center gap-2 border-b px-3 py-2"><span className="grid h-7 w-7 place-items-center rounded bg-[#0a66c2] text-xs font-black text-white">in</span><div><p className="text-[11px] font-bold">AdaptifAI</p><p className="text-[9px] text-[#666]">Promoted</p></div></div><div className="p-2">{creative}</div><div className="flex justify-around border-t px-3 py-2 text-[10px] font-bold text-[#555]"><span>Like</span><span>Comment</span><span>Send</span></div>
+    <div className={["mx-auto overflow-hidden rounded-md border bg-white shadow-xl", device === "mobile" ? "w-[190px]" : "w-full max-w-[500px]"].join(" ")}>
+      <div className="flex items-center gap-2 border-b px-3 py-2"><span className="grid h-7 w-7 place-items-center rounded bg-[#0a66c2] text-xs font-black text-white">in</span><div><p className="text-[11px] font-bold">AdaptifAI</p><p className="text-[9px] text-[#666]">Promoted</p></div></div><div className="p-2">{framedCreative}</div><div className="flex justify-around border-t px-3 py-2 text-[10px] font-bold text-[#555]"><span>Like</span><span>Comment</span><span>Send</span></div>
     </div>
   );
   else if (placement.platform === "SNAPCHAT") shell = (
-    <div className="relative mx-auto w-[230px] overflow-hidden rounded-[22px] bg-[#fffc00] p-2 shadow-2xl"><div className="overflow-hidden rounded-[16px]">{creative}</div><div className="absolute left-4 right-4 top-4 flex justify-between text-[10px] font-bold"><span>Story Ad</span><span>...</span></div><div className="absolute bottom-4 left-6 right-6 rounded-full bg-white px-3 py-2 text-center text-[10px] font-black">Swipe up</div></div>
+    <div className="relative mx-auto w-[182px] overflow-hidden rounded-[24px] border-[7px] border-[#111] bg-[#fffc00] shadow-2xl"><div className="overflow-hidden rounded-[16px]">{creative}</div><div className="absolute left-4 right-4 top-4 flex justify-between text-[10px] font-bold"><span>Story Ad</span><span>...</span></div><div className="absolute bottom-4 left-6 right-6 rounded-full bg-white px-3 py-2 text-center text-[10px] font-black">Swipe up</div></div>
   );
   else shell = (
-    <div className={["mx-auto overflow-hidden rounded-md border bg-white shadow-xl", device === "mobile" ? "w-[245px]" : "w-full max-w-[620px]"].join(" ")}>
+    <div className={["mx-auto overflow-hidden rounded-md border bg-white shadow-xl", device === "mobile" ? "w-[210px]" : "w-full max-w-[540px]"].join(" ")}>
       <div className="flex items-center gap-2 border-b bg-[#f7f7f7] px-3 py-2"><span className="h-2.5 w-2.5 rounded-full bg-[#ee4d6a]" /><span className="h-2.5 w-2.5 rounded-full bg-[#f0d553]" /><span className="h-2.5 w-2.5 rounded-full bg-[#38b6a6]" /><span className="ml-2 rounded bg-white px-2 py-1 text-[9px] text-[#666]">news.example/ad-preview</span></div>
-      <div className={["grid gap-3 p-3", device === "desktop" && placement.height > 120 ? "grid-cols-[1fr_240px]" : ""].join(" ")}><div><p className="text-[10px] font-black uppercase text-[#0f766e]">{placement.platform === "GOOGLE" ? "Google Display Network" : "Native publisher"}</p><h3 className="mt-1 text-base font-semibold">{placement.platform === "GOOGLE" ? "Display inventory preview" : "Article layout"}</h3><div className="mt-3 space-y-1.5"><div className="h-2.5 rounded bg-[#ededed]" /><div className="h-2.5 w-5/6 rounded bg-[#ededed]" /><div className="h-2.5 w-2/3 rounded bg-[#ededed]" /></div></div><div><p className="mb-1 text-right text-[9px] font-semibold uppercase text-[#777]">Advertisement</p>{creative}</div></div>
+      <div className={["grid gap-3 p-3", device === "desktop" && placement.height > 120 ? "grid-cols-[1fr_220px]" : ""].join(" ")}><div><p className="text-[10px] font-black uppercase text-[#0f766e]">{placement.platform === "GOOGLE" ? "Google Display Network" : "Native publisher"}</p><h3 className="mt-1 text-base font-semibold">{placement.platform === "GOOGLE" ? "Display inventory preview" : "Article layout"}</h3><div className="mt-3 space-y-1.5"><div className="h-2.5 rounded bg-[#ededed]" /><div className="h-2.5 w-5/6 rounded bg-[#ededed]" /><div className="h-2.5 w-2/3 rounded bg-[#ededed]" /></div></div><div><p className="mb-1 text-right text-[9px] font-semibold uppercase text-[#777]">Advertisement</p>{framedCreative}</div></div>
     </div>
   );
 
   return (
-    <div className="flex min-h-[360px] max-h-[calc(100svh-220px)] flex-col justify-center gap-3 overflow-hidden bg-[#f3f0e8] p-3">
+    <div className="flex min-h-[300px] max-h-[calc(100svh-230px)] flex-col justify-center gap-2 overflow-hidden bg-[#f3f0e8] p-2">
       {shell}
-      <div className="mx-auto flex w-full max-w-[620px] justify-between rounded-md bg-[#111] px-3 py-2 text-[10px] text-white">
+      <div className="mx-auto flex w-full max-w-[540px] justify-between rounded-md bg-[#111] px-3 py-2 text-[10px] text-white">
         <span>{placement.platform} / {placement.label} / {placement.width}x{placement.height}</span>
         <span className={warnings.length ? "text-[#ffcf4a]" : "text-[#7ee1c6]"}>{warnings.length ? `${warnings.length} safe-zone warning` : "Safe zone clear"}</span>
       </div>
@@ -451,6 +454,7 @@ export function AdaptDashboard() {
   const [authReady, setAuthReady] = useState(!supabaseConfigured);
   const [authError, setAuthError] = useState<string | null>(null);
   const [authPending, setAuthPending] = useState(false);
+  const [showCreditStore, setShowCreditStore] = useState(false);
   const [adminTargetEmail, setAdminTargetEmail] = useState("");
   const [adminAmount, setAdminAmount] = useState(100);
   const [adminAction, setAdminAction] = useState<"add" | "deduct">("add");
@@ -471,12 +475,27 @@ export function AdaptDashboard() {
   const activePlacement = placements.find((p) => p.id === activePlacementId) ?? placements[0];
   const currentUserEmail = authUser?.email ?? userId;
   const isAdmin = currentUserEmail.toLowerCase() === (process.env.NEXT_PUBLIC_ADMIN_EMAIL ?? "tolgar@sasmaz.digital").toLowerCase();
-  const billableLanguages = mode === "adapt" ? selectedLanguages.length : 1;
-  const estimatedRunCredits = mode === "adapt"
+  const estimatedRunCredits = files.length === 0 ? 0 : mode === "adapt"
     ? estimateLocalizeCredits({ fileCount: files.length, languageCount: selectedLanguages.length, outputFormat: selectedFormat })
     : estimateResizeCredits({ fileCount: files.length, dimensionCount: selectedPlacementIds.length, outputFormat: selectedFormat });
   const editCredits = estimateEditCredits(mode);
-  const actionCredits = result ? editCredits : estimatedRunCredits;
+  const generatedLocalizeCount = files.length * selectedLanguages.length;
+  const outputFormatCost = selectedFormat.toLowerCase() === "pdf";
+  const receiptLines: ReceiptLine[] = result
+    ? [{ label: "Modify edit", formula: `1 x ${editCredits}`, credits: editCredits }]
+    : mode === "adapt"
+      ? [
+        { label: "Files", formula: `${files.length} x ${creditPricing.localizeImage}`, credits: files.length * creditPricing.localizeImage },
+        { label: "Languages", formula: `${generatedLocalizeCount} x ${creditPricing.localizeLanguagePerGeneratedImage}`, credits: generatedLocalizeCount * creditPricing.localizeLanguagePerGeneratedImage },
+        { label: "Placements", formula: "Not used", credits: 0 },
+        { label: "Output", formula: outputFormatCost ? `${generatedLocalizeCount} x ${creditPricing.localizePdfOutput}` : `1 x ${creditPricing.localizeOutputFormat}`, credits: files.length === 0 ? 0 : outputFormatCost ? generatedLocalizeCount * creditPricing.localizePdfOutput : creditPricing.localizeOutputFormat },
+      ]
+      : [
+        { label: "Files", formula: `${files.length} x ${creditPricing.resizeImage}`, credits: files.length * creditPricing.resizeImage },
+        { label: "Placements", formula: `${selectedPlacementIds.length} x ${creditPricing.resizeDimension}`, credits: files.length === 0 ? 0 : selectedPlacementIds.length * creditPricing.resizeDimension },
+        { label: "Output", formula: outputFormatCost ? `${selectedPlacementIds.length} x ${creditPricing.resizePdfOutput}` : `1 x ${creditPricing.resizeOutputFormat}`, credits: files.length === 0 ? 0 : outputFormatCost ? selectedPlacementIds.length * creditPricing.resizePdfOutput : creditPricing.resizeOutputFormat },
+      ];
+  const actionCredits = result ? editCredits : receiptLines.reduce((sum, line) => sum + line.credits, 0);
   const remainingAfterAction = credits - actionCredits;
   const canRun = files.length > 0 && (mode === "adapt" || selectedPlacementIds.length > 0) && (mode !== "adapt" || selectedLanguages.length > 0) && credits >= estimatedRunCredits;
   const canApplyCurrentEdit = Boolean(result) && credits >= editCredits;
@@ -587,7 +606,7 @@ export function AdaptDashboard() {
       body: JSON.stringify({ pack, user_id: currentUserEmail }),
     });
     const payload = await response.json();
-    if (payload.url) window.location.href = payload.url;
+    if (payload.url) globalThis.location.assign(payload.url);
     else setError(payload.error ?? "Stripe Checkout is not configured yet.");
   };
 
@@ -646,10 +665,41 @@ export function AdaptDashboard() {
     );
   }
 
+  if (showCreditStore) {
+    return (
+      <main className="min-h-screen bg-[#faf9f5] text-[#151515]">
+        <header className="sticky top-0 z-20 border-b border-[#151515]/10 bg-[#faf9f5]/95 backdrop-blur">
+          <div className="mx-auto flex max-w-[1180px] flex-wrap items-center justify-between gap-3 px-4 py-4">
+            <Brand />
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 items-center gap-2 rounded-md border border-[#151515]/15 bg-white px-3 text-sm font-semibold"><Sparkles className="h-4 w-4 text-[#0f766e]" />{credits} credits</div>
+              <button type="button" onClick={() => setShowCreditStore(false)} className="h-10 rounded-md border border-[#151515]/15 bg-white px-4 text-sm font-semibold">Back to workspace</button>
+            </div>
+          </div>
+        </header>
+        <section className="mx-auto max-w-[1180px] px-4 py-10">
+          <p className="text-xs font-black uppercase text-[#0f766e]">Buy credits</p>
+          <h1 className="mt-2 text-4xl font-black">Choose a credit pack</h1>
+          <div className="mt-8 grid gap-4 md:grid-cols-3">
+            {pricingPacks.map((pack) => (
+              <div key={pack.id} className="rounded-md border border-[#151515]/10 bg-white p-5 shadow-sm">
+                <p className="text-lg font-black">{pack.name}</p>
+                <p className="mt-4 text-4xl font-black">{pack.price}</p>
+                <p className="mt-2 text-sm font-semibold text-[#0f766e]">{pack.credits}</p>
+                <p className="mt-4 min-h-12 text-sm leading-6 text-[#555]">{pack.body}</p>
+                <button type="button" onClick={() => buyCredits(pack.id)} className="mt-5 flex h-11 w-full items-center justify-center gap-2 rounded-md bg-[#151515] text-sm font-semibold text-white"><CreditCard className="h-4 w-4" />Buy {pack.name}</button>
+              </div>
+            ))}
+          </div>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-[#faf9f5] text-[#151515]">
       <header className="sticky top-0 z-20 border-b border-[#151515]/10 bg-[#faf9f5]/95 backdrop-blur">
-        <div className="mx-auto flex max-w-[1560px] flex-wrap items-center justify-between gap-4 px-5 py-4">
+        <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-3 px-4 py-3">
           <Brand />
           <div className="flex items-center gap-1 rounded-md bg-[#f1eee6] p-1">
             {(["adapt", "resize"] as const).map((item) => (
@@ -658,14 +708,14 @@ export function AdaptDashboard() {
           </div>
           <div className="flex items-center gap-3">
             <div className="flex h-10 items-center gap-2 rounded-md border border-[#151515]/15 bg-white px-3 text-sm font-semibold"><Sparkles className="h-4 w-4 text-[#0f766e]" />{credits} credits</div>
-            <button type="button" onClick={() => buyCredits("starter")} className="flex h-10 items-center gap-2 rounded-md bg-[#151515] px-4 text-sm font-semibold text-white"><CreditCard className="h-4 w-4" />Buy credits</button>
+            <button type="button" onClick={() => setShowCreditStore(true)} className="flex h-10 items-center gap-2 rounded-md bg-[#151515] px-4 text-sm font-semibold text-white"><CreditCard className="h-4 w-4" />Buy credits</button>
             <div className="flex h-10 items-center gap-2 rounded-md border border-[#151515]/15 bg-white px-3 text-sm font-semibold"><User className="h-4 w-4 text-[#0f766e]" /><span className="hidden max-w-[190px] truncate md:block">{currentUserEmail}</span></div>
             {supabaseConfigured && <button type="button" onClick={() => supabase?.auth.signOut()} className="grid h-10 w-10 place-items-center rounded-md border border-[#151515]/15 bg-white" aria-label="Sign out"><LogOut className="h-4 w-4 text-[#0f766e]" /></button>}
           </div>
         </div>
       </header>
 
-      <form onSubmit={runProcess} className="mx-auto grid max-w-[1560px] gap-4 px-5 py-5 xl:grid-cols-[380px_minmax(560px,1fr)_340px]">
+      <form onSubmit={runProcess} className="mx-auto grid max-w-[1440px] gap-3 px-3 py-4 lg:grid-cols-[290px_minmax(0,1fr)_280px] 2xl:grid-cols-[320px_minmax(0,1fr)_300px]">
         <aside className="space-y-4">
           <section className="rounded-md border border-[#151515]/10 bg-white p-4">
             <p className="text-xs font-semibold uppercase text-[#0f766e]">{mode === "adapt" ? "Localize workspace" : "Resize workspace"}</p>
@@ -707,7 +757,7 @@ export function AdaptDashboard() {
               {mode === "adapt" ? (
                 <>
                   <Collapsible title="Languages" icon={<Languages className="h-4 w-4 text-[#0f766e]" />}>
-                    <div className="grid grid-cols-2 gap-2">{languages.map((language) => { const selected = selectedLanguages.includes(language.code); return <button key={language.code} type="button" onClick={() => setSelectedLanguages((current) => selected ? current.filter((code) => code !== language.code) : [...current, language.code])} className={["flex h-10 items-center justify-between rounded-md border px-3 text-sm", selected ? "border-[#0f766e] bg-[#dff8ef] text-[#064e46]" : "border-[#151515]/10 bg-[#faf9f5]"].join(" ")}>{language.code}{selected && <Check className="h-4 w-4" />}</button>; })}</div>
+                    <div className="grid grid-cols-5 gap-1">{languages.map((language) => { const selected = selectedLanguages.includes(language.code); return <button key={language.code} type="button" onClick={() => setSelectedLanguages((current) => selected ? current.filter((code) => code !== language.code) : [...current, language.code])} className={["flex h-9 items-center justify-center gap-1 rounded-md border px-2 text-xs font-semibold", selected ? "border-[#0f766e] bg-[#dff8ef] text-[#064e46]" : "border-[#151515]/10 bg-[#faf9f5]"].join(" ")}>{language.code}{selected && <Check className="h-3 w-3" />}</button>; })}</div>
                   </Collapsible>
                   <Collapsible title="Output Format" icon={<Download className="h-4 w-4 text-[#0f766e]" />}>
                     <div className="grid grid-cols-5 gap-1 rounded-md bg-[#f1eee6] p-1">{outputFormats.map((format) => <button key={format} type="button" onClick={() => setSelectedFormat(format)} className={["h-9 rounded text-xs font-semibold", selectedFormat === format ? "bg-[#151515] text-white" : "text-[#555] hover:bg-white"].join(" ")}>{format}</button>)}</div>
@@ -757,31 +807,26 @@ export function AdaptDashboard() {
         <aside className="space-y-4">
           <section className="sticky top-24 rounded-md border border-[#151515]/10 bg-white p-4 shadow-sm">
             <div className="mb-3 flex items-center justify-between"><h2 className="font-semibold">Action</h2><Sparkles className="h-4 w-4 text-[#0f766e]" /></div>
-            <div className="space-y-2 text-sm">
-              {[["Operation", result ? "Modify result" : mode === "adapt" ? "Localize" : "Resize"], ["Files", files.length], ["Languages", billableLanguages], ["Placements", mode === "adapt" ? "Not used" : selectedPlacementIds.length], ["Output", selectedFormat]].map(([label, value]) => <div key={String(label)} className="flex justify-between rounded-md bg-[#faf9f5] px-3 py-2"><span>{label}</span><span className="font-semibold capitalize">{value}</span></div>)}
+            <div className="rounded-md bg-[#faf9f5] px-3 py-2 text-sm">
+              <div className="flex justify-between gap-3"><span>Operation</span><span className="font-semibold">{result ? "Modify result" : mode === "adapt" ? "Localize" : "Resize"}</span></div>
             </div>
-            <div className="mt-4 rounded-md bg-[#151515] p-3 text-white">
-              <div className="flex justify-between text-sm"><span>Credits to use</span><span className="font-black">{actionCredits}</span></div>
-              <div className="mt-2 flex justify-between text-xs text-white/75"><span>Current balance</span><span>{credits}</span></div>
-              <div className={["mt-1 flex justify-between text-xs font-semibold", remainingAfterAction < 0 ? "text-[#ffcf4a]" : "text-[#7ee1c6]"].join(" ")}><span>Remaining after action</span><span>{remainingAfterAction}</span></div>
+            <div className="mt-3 space-y-2 text-sm">
+              {receiptLines.map((line) => (
+                <div key={line.label} className="grid grid-cols-[1fr_auto] gap-3 rounded-md bg-[#faf9f5] px-3 py-2">
+                  <span><span className="block font-semibold">{line.label}</span><span className="text-[11px] text-[#666]">{line.formula}</span></span>
+                  <span className="font-black">{line.credits}</span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 border-t border-[#151515]/10 pt-3 text-sm">
+              <div className="flex justify-between gap-3 font-black"><span>Total Credits</span><span>{actionCredits}</span></div>
+              <div className={["mt-2 flex justify-between gap-3 font-semibold", remainingAfterAction < 0 ? "text-[#b42318]" : "text-[#0f766e]"].join(" ")}><span>Remaining Credits</span><span>{remainingAfterAction}</span></div>
             </div>
             <button type={result ? "button" : "submit"} onClick={result ? applyManualEdit : undefined} disabled={result ? isApplyingEdit || !canApplyCurrentEdit : isRunning || !canRun} className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-md bg-[#ee4d6a] text-sm font-semibold text-white disabled:bg-[#d6d0c4]">
               {result ? (isApplyingEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />) : isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
               {result ? `Apply edit / use ${editCredits} credits` : mode === "adapt" ? "Run Localize" : "Run Resize"}
             </button>
             {remainingAfterAction < 0 && <p className="mt-3 text-xs font-semibold text-[#b42318]">Add credits before starting this action.</p>}
-          </section>
-
-          <section className="rounded-md border border-[#151515]/10 bg-white p-4">
-            <div className="mb-3 flex items-center justify-between"><h2 className="font-semibold">Credit Packs</h2><CreditCard className="h-4 w-4 text-[#0f766e]" /></div>
-            <div className="space-y-2">
-              {pricingPacks.map((pack) => (
-                <button key={pack.id} type="button" onClick={() => buyCredits(pack.id)} className="flex w-full items-center justify-between rounded-md border border-[#151515]/10 bg-[#faf9f5] px-3 py-2 text-left hover:border-[#0f766e]">
-                  <span><span className="block text-sm font-semibold">{pack.name}</span><span className="text-xs text-[#666]">{pack.credits}</span></span>
-                  <span className="text-sm font-black">{pack.price}</span>
-                </button>
-              ))}
-            </div>
           </section>
 
           {isAdmin && (
