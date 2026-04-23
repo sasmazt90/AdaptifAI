@@ -44,9 +44,9 @@ const sampleCopy = {
   resize: "Creative resized for every paid channel",
 };
 const pricingPacks = [
-  ["Starter", "50 credits", "€9.90", "Small campaign tests and quick localization checks."],
-  ["Studio", "150 credits", "€24.90", "Recurring paid social and display production."],
-  ["Scale", "250 credits", "€39.90", "High-volume global creative operations."],
+  { id: "starter", name: "Starter", credits: "50 credits", price: "€9.90", body: "Small campaign tests and quick localization checks." },
+  { id: "studio", name: "Studio", credits: "150 credits", price: "€24.90", body: "Recurring paid social and display production." },
+  { id: "scale", name: "Scale", credits: "250 credits", price: "€39.90", body: "High-volume global creative operations." },
 ] as const;
 
 function cleanCopy(value: string) {
@@ -304,11 +304,11 @@ function LandingPage({
           <button type="button" onClick={() => chooseAuth("sign-up")} className="h-11 rounded-md bg-[#151515] px-5 font-semibold text-white">Create account</button>
         </div>
         <div className="mt-8 grid gap-4 md:grid-cols-3">
-          {pricingPacks.map(([name, creditsLabel, price, body]) => (
+          {pricingPacks.map(({ name, credits, price, body }) => (
             <div key={name} className="rounded-md border border-[#151515]/10 bg-white p-5">
               <p className="text-lg font-black">{name}</p>
               <p className="mt-4 text-4xl font-black">{price}</p>
-              <p className="mt-2 text-sm font-semibold text-[#0f766e]">{creditsLabel}</p>
+              <p className="mt-2 text-sm font-semibold text-[#0f766e]">{credits}</p>
               <p className="mt-4 text-sm leading-6 text-[#555]">{body}</p>
             </div>
           ))}
@@ -580,11 +580,11 @@ export function AdaptDashboard() {
     }
   };
 
-  const buyCredits = async () => {
+  const buyCredits = async (pack: (typeof pricingPacks)[number]["id"] = "starter") => {
     const response = await fetch("/api/stripe/checkout", {
       method: "POST",
       headers: { "content-type": "application/json", ...(sessionToken ? { authorization: `Bearer ${sessionToken}` } : {}) },
-      body: JSON.stringify({ pack: "starter", user_id: currentUserEmail }),
+      body: JSON.stringify({ pack, user_id: currentUserEmail }),
     });
     const payload = await response.json();
     if (payload.url) window.location.href = payload.url;
@@ -658,7 +658,7 @@ export function AdaptDashboard() {
           </div>
           <div className="flex items-center gap-3">
             <div className="flex h-10 items-center gap-2 rounded-md border border-[#151515]/15 bg-white px-3 text-sm font-semibold"><Sparkles className="h-4 w-4 text-[#0f766e]" />{credits} credits</div>
-            <button type="button" onClick={buyCredits} className="flex h-10 items-center gap-2 rounded-md bg-[#151515] px-4 text-sm font-semibold text-white"><CreditCard className="h-4 w-4" />Buy credits</button>
+            <button type="button" onClick={() => buyCredits("starter")} className="flex h-10 items-center gap-2 rounded-md bg-[#151515] px-4 text-sm font-semibold text-white"><CreditCard className="h-4 w-4" />Buy credits</button>
             <div className="flex h-10 items-center gap-2 rounded-md border border-[#151515]/15 bg-white px-3 text-sm font-semibold"><User className="h-4 w-4 text-[#0f766e]" /><span className="hidden max-w-[190px] truncate md:block">{currentUserEmail}</span></div>
             {supabaseConfigured && <button type="button" onClick={() => supabase?.auth.signOut()} className="grid h-10 w-10 place-items-center rounded-md border border-[#151515]/15 bg-white" aria-label="Sign out"><LogOut className="h-4 w-4 text-[#0f766e]" /></button>}
           </div>
@@ -770,6 +770,18 @@ export function AdaptDashboard() {
               {result ? `Apply edit / use ${editCredits} credits` : mode === "adapt" ? "Run Localize" : "Run Resize"}
             </button>
             {remainingAfterAction < 0 && <p className="mt-3 text-xs font-semibold text-[#b42318]">Add credits before starting this action.</p>}
+          </section>
+
+          <section className="rounded-md border border-[#151515]/10 bg-white p-4">
+            <div className="mb-3 flex items-center justify-between"><h2 className="font-semibold">Credit Packs</h2><CreditCard className="h-4 w-4 text-[#0f766e]" /></div>
+            <div className="space-y-2">
+              {pricingPacks.map((pack) => (
+                <button key={pack.id} type="button" onClick={() => buyCredits(pack.id)} className="flex w-full items-center justify-between rounded-md border border-[#151515]/10 bg-[#faf9f5] px-3 py-2 text-left hover:border-[#0f766e]">
+                  <span><span className="block text-sm font-semibold">{pack.name}</span><span className="text-xs text-[#666]">{pack.credits}</span></span>
+                  <span className="text-sm font-black">{pack.price}</span>
+                </button>
+              ))}
+            </div>
           </section>
 
           {isAdmin && (
