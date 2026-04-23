@@ -44,9 +44,9 @@ const sampleCopy = {
   resize: "Creative resized for every paid channel",
 };
 const pricingPacks = [
-  ["Starter", "250 credits", "$29", "Small campaign tests and quick localization checks."],
-  ["Studio", "900 credits", "$99", "Recurring paid social and display production."],
-  ["Scale", "3500 credits", "$249", "High-volume global creative operations."],
+  ["Starter", "50 credits", "€9.90", "Small campaign tests and quick localization checks."],
+  ["Studio", "150 credits", "€24.90", "Recurring paid social and display production."],
+  ["Scale", "250 credits", "€39.90", "High-volume global creative operations."],
 ] as const;
 
 function cleanCopy(value: string) {

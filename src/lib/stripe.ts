@@ -27,23 +27,23 @@ export function getStripeEnv(key: string) {
 
 export const creditPacks = {
   starter: {
-    credits: 250,
+    credits: 50,
     name: "AdaptifAI Starter Credits",
-    amount: 2900,
+    amount: 990,
     envPriceKey: "STRIPE_PRICE_STARTER",
     envPaymentLinkKey: "STRIPE_PAYMENT_LINK_STARTER",
   },
   studio: {
-    credits: 900,
+    credits: 150,
     name: "AdaptifAI Studio Credits",
-    amount: 9900,
+    amount: 2490,
     envPriceKey: "STRIPE_PRICE_STUDIO",
     envPaymentLinkKey: "STRIPE_PAYMENT_LINK_STUDIO",
   },
   scale: {
-    credits: 3500,
+    credits: 250,
     name: "AdaptifAI Scale Credits",
-    amount: 24900,
+    amount: 3990,
     envPriceKey: "STRIPE_PRICE_SCALE",
     envPaymentLinkKey: "STRIPE_PAYMENT_LINK_SCALE",
   },
