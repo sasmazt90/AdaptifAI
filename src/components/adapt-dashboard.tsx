@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { estimateEditCredits, estimateLocalizeCredits, estimateResizeCredits } from "@/lib/credit-pricing";
 import { languages, outputFormats, Placement, placements } from "@/lib/placements";
 import { getSupabaseBrowser, hasSupabaseBrowserConfig } from "@/lib/supabase-client";
 
@@ -50,10 +51,6 @@ const pricingPacks = [
 
 function cleanCopy(value: string) {
   return value.replaceAll("[BOLD]", "").replaceAll("[/BOLD]", "");
-}
-
-function estimateCredits(fileCount: number, languageCount: number, placementCount: number) {
-  return Math.max(1, fileCount) * Math.max(1, languageCount) * Math.max(1, placementCount);
 }
 
 function overlaps(zone: Placement["safeZones"][number], box: { x: number; y: number; width: number; height: number }) {
@@ -475,9 +472,10 @@ export function AdaptDashboard() {
   const currentUserEmail = authUser?.email ?? userId;
   const isAdmin = currentUserEmail.toLowerCase() === (process.env.NEXT_PUBLIC_ADMIN_EMAIL ?? "tolgar@sasmaz.digital").toLowerCase();
   const billableLanguages = mode === "adapt" ? selectedLanguages.length : 1;
-  const billablePlacements = mode === "adapt" ? 1 : selectedPlacementIds.length;
-  const estimatedRunCredits = estimateCredits(files.length, billableLanguages, billablePlacements);
-  const editCredits = 1;
+  const estimatedRunCredits = mode === "adapt"
+    ? estimateLocalizeCredits({ fileCount: files.length, languageCount: selectedLanguages.length, outputFormat: selectedFormat })
+    : estimateResizeCredits({ fileCount: files.length, dimensionCount: selectedPlacementIds.length, outputFormat: selectedFormat });
+  const editCredits = estimateEditCredits(mode);
   const actionCredits = result ? editCredits : estimatedRunCredits;
   const remainingAfterAction = credits - actionCredits;
   const canRun = files.length > 0 && (mode === "adapt" || selectedPlacementIds.length > 0) && (mode !== "adapt" || selectedLanguages.length > 0) && credits >= estimatedRunCredits;
@@ -569,12 +567,12 @@ export function AdaptDashboard() {
       const response = await fetch("/api/edit", {
         method: "POST",
         headers: { "content-type": "application/json", ...(sessionToken ? { authorization: `Bearer ${sessionToken}` } : {}) },
-        body: JSON.stringify({ mode, credits: 1 }),
+        body: JSON.stringify({ mode, credits: editCredits }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? "Unable to apply edit.");
       setCredits(Number(payload.credits_remaining ?? credits));
-      setEditStatus(`${mode === "adapt" ? "Translation edit" : "Resize edit"} applied. 1 credit used.`);
+      setEditStatus(`${mode === "adapt" ? "Translation edit" : "Resize edit"} applied. ${editCredits} credits used.`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to apply edit.");
     } finally {
@@ -716,9 +714,14 @@ export function AdaptDashboard() {
                   </Collapsible>
                 </>
               ) : (
-                <Collapsible title="Dimensions" icon={<Frame className="h-4 w-4 text-[#0f766e]" />}>
-                  <div className="max-h-[560px] space-y-4 overflow-auto pr-1">{grouped.map(([platform, items]) => <div key={platform}><p className="mb-2 text-xs font-semibold uppercase text-[#777]">{platform}</p><div className="space-y-2">{items.map((placement) => { const selected = selectedPlacementIds.includes(placement.id); return <label key={placement.id} className={["flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-sm", selected ? "border-[#0f766e] bg-[#e8f7f1]" : "border-[#151515]/10 bg-[#faf9f5]"].join(" ")}><input type="checkbox" className="h-4 w-4 accent-[#0f766e]" checked={selected} onChange={() => togglePlacement(placement.id)} /><span className="min-w-0 flex-1"><span className="block font-semibold">{placement.label}</span><span className="text-xs text-[#666]">{placement.ratio} / {placement.width}x{placement.height}</span></span></label>; })}</div></div>)}</div>
-                </Collapsible>
+                <>
+                  <Collapsible title="Dimensions" icon={<Frame className="h-4 w-4 text-[#0f766e]" />}>
+                    <div className="max-h-[500px] space-y-4 overflow-auto pr-1">{grouped.map(([platform, items]) => <div key={platform}><p className="mb-2 text-xs font-semibold uppercase text-[#777]">{platform}</p><div className="space-y-2">{items.map((placement) => { const selected = selectedPlacementIds.includes(placement.id); return <label key={placement.id} className={["flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-sm", selected ? "border-[#0f766e] bg-[#e8f7f1]" : "border-[#151515]/10 bg-[#faf9f5]"].join(" ")}><input type="checkbox" className="h-4 w-4 accent-[#0f766e]" checked={selected} onChange={() => togglePlacement(placement.id)} /><span className="min-w-0 flex-1"><span className="block font-semibold">{placement.label}</span><span className="text-xs text-[#666]">{placement.ratio} / {placement.width}x{placement.height}</span></span></label>; })}</div></div>)}</div>
+                  </Collapsible>
+                  <Collapsible title="Output Format" icon={<Download className="h-4 w-4 text-[#0f766e]" />}>
+                    <div className="grid grid-cols-5 gap-1 rounded-md bg-[#f1eee6] p-1">{outputFormats.map((format) => <button key={format} type="button" onClick={() => setSelectedFormat(format)} className={["h-9 rounded text-xs font-semibold", selectedFormat === format ? "bg-[#151515] text-white" : "text-[#555] hover:bg-white"].join(" ")}>{format}</button>)}</div>
+                  </Collapsible>
+                </>
               )}
             </>
           )}
@@ -764,7 +767,7 @@ export function AdaptDashboard() {
             </div>
             <button type={result ? "button" : "submit"} onClick={result ? applyManualEdit : undefined} disabled={result ? isApplyingEdit || !canApplyCurrentEdit : isRunning || !canRun} className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-md bg-[#ee4d6a] text-sm font-semibold text-white disabled:bg-[#d6d0c4]">
               {result ? (isApplyingEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />) : isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-              {result ? "Apply edit / use 1 credit" : mode === "adapt" ? "Run Localize" : "Run Resize"}
+              {result ? `Apply edit / use ${editCredits} credits` : mode === "adapt" ? "Run Localize" : "Run Resize"}
             </button>
             {remainingAfterAction < 0 && <p className="mt-3 text-xs font-semibold text-[#b42318]">Add credits before starting this action.</p>}
           </section>

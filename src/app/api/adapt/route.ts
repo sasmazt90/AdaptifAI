@@ -1,14 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedEmail } from "@/lib/auth";
+import { estimateLocalizeCredits, estimateResizeCredits } from "@/lib/credit-pricing";
 import { getCredits, spendCredits } from "@/lib/credits";
 
 export const runtime = "nodejs";
 
 function estimateCredits(formData: FormData) {
   const fileCount = Math.max(1, formData.getAll("files").length);
-  const languageCount = Math.max(1, String(formData.get("target_languages") ?? "EN").split(",").filter(Boolean).length);
-  const placementCount = Math.max(1, String(formData.get("placements") ?? "meta-stories").split(",").filter(Boolean).length);
-  return fileCount * languageCount * placementCount;
+  const languages = String(formData.get("target_languages") ?? "EN").split(",").filter(Boolean);
+  const placements = String(formData.get("placements") ?? "meta-stories").split(",").filter(Boolean);
+  const outputFormat = String(formData.get("output_format") ?? "PNG");
+  const isLocalize = placements.length === 1 && placements[0] === "native-custom";
+
+  return isLocalize
+    ? estimateLocalizeCredits({ fileCount, languageCount: languages.length, outputFormat })
+    : estimateResizeCredits({ fileCount, dimensionCount: placements.length, outputFormat });
 }
 
 export async function POST(request: NextRequest) {
@@ -33,10 +39,11 @@ export async function POST(request: NextRequest) {
       ? await response.json()
       : { error: `Backend returned ${response.status}`, detail: await response.text() };
     if (response.ok) {
-      const spend = await spendCredits(userId, Number(payload.credits_estimated ?? 0));
+      const spend = await spendCredits(userId, estimatedCredits);
       if (!spend.ok) {
         return NextResponse.json({ error: "Insufficient credits.", credits: spend.credits }, { status: 402 });
       }
+      payload.credits_estimated = estimatedCredits;
       payload.credits_remaining = spend.credits;
     }
     return NextResponse.json(payload, { status: response.status });
