@@ -16,7 +16,7 @@ import zipfile
 from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Callable
 from uuid import uuid4
 
 import numpy as np
@@ -2629,10 +2629,10 @@ def refine_blocks_with_openai_vision(image_path: Path, blocks: list[TextBlock]) 
         image_width, image_height = source_image.size
         encoded = base64.b64encode(image_path.read_bytes()).decode("utf-8")
         client = OpenAI()
-        response = client.chat.completions.create(
-            model=os.getenv("OPENAI_TRANSLATION_MODEL", "gpt-4o"),
-            temperature=0,
-            messages=[
+        model = os.getenv("OPENAI_TRANSLATION_MODEL", "gpt-5.6-terra").strip() or "gpt-5.6-terra"
+        request: dict[str, Any] = {
+            "model": model,
+            "messages": [
                 {
                     "role": "system",
                     "content": "You review ad creatives for localization. Return compact JSON only with key `lines`. Each item must contain `text`, `translate`, `surface`, `x`, `y`, `w`, `h`, and optional `align`. `surface` must be one of `overlay`, `packaging`, or `product`. Use `overlay` for creative text added around/over the visual as marketing copy. Use `packaging` for printed text on product bottles, boxes, cans, labels, packaging, or stickers. Use `product` for text physically printed on a product/device/object. Coordinates are percentages from 0 to 100 relative to the whole image and should tightly cover the visible text line. Keep each visible line separate and in strict top-to-bottom order. Set translate=true only for primary marketing claims, feature callouts, CTAs, comparison labels, and instructional copy that are not printed on packaging/product surfaces. Set translate=false for product packaging labels, brand names, URLs, QR-related text, device labels, and tiny legal disclaimers. Use align='center' for centered copy, otherwise align='left'.",
@@ -2645,8 +2645,11 @@ def refine_blocks_with_openai_vision(image_path: Path, blocks: list[TextBlock]) 
                     ],
                 },
             ],
-            response_format={"type": "json_object"},
-        )
+            "response_format": {"type": "json_object"},
+        }
+        if model.startswith("gpt-5.6"):
+            request["reasoning_effort"] = os.getenv("ADAPTIFAI_OPENAI_REASONING_EFFORT", "none")
+        response = client.chat.completions.create(**request)
         parsed = json.loads(response.choices[0].message.content or "{}")
         raw_items = parsed.get("lines", [])
         if not isinstance(raw_items, list):
@@ -2853,10 +2856,10 @@ def extract_marketing_blocks_with_openai_vision(image_path: Path) -> list[TextBl
         image_width, image_height = source_image.size
         encoded = base64.b64encode(image_path.read_bytes()).decode("utf-8")
         client = OpenAI()
-        response = client.chat.completions.create(
-            model=os.getenv("OPENAI_TRANSLATION_MODEL", "gpt-4o"),
-            temperature=0,
-            messages=[
+        model = os.getenv("OPENAI_TRANSLATION_MODEL", "gpt-5.6-terra").strip() or "gpt-5.6-terra"
+        request: dict[str, Any] = {
+            "model": model,
+            "messages": [
                 {
                     "role": "system",
                     "content": (
@@ -2878,8 +2881,11 @@ def extract_marketing_blocks_with_openai_vision(image_path: Path) -> list[TextBl
                     ],
                 },
             ],
-            response_format={"type": "json_object"},
-        )
+            "response_format": {"type": "json_object"},
+        }
+        if model.startswith("gpt-5.6"):
+            request["reasoning_effort"] = os.getenv("ADAPTIFAI_OPENAI_REASONING_EFFORT", "none")
+        response = client.chat.completions.create(**request)
         parsed = json.loads(response.choices[0].message.content or "{}")
         return parse_structured_localize_blocks(parsed.get("blocks", []), source_image)
     except Exception:
@@ -3053,17 +3059,12 @@ def detect_source_language(blocks: list[TextBlock]) -> str:
             return "FR"
         return "EN"
     try:
-        client = OpenAI()
-        response = client.chat.completions.create(
-            model=os.getenv("OPENAI_TRANSLATION_MODEL", "gpt-4o"),
-            temperature=0,
-            messages=[
-                {"role": "system", "content": "Detect the source language of this marketing copy. Return compact JSON only with key `language` as one of EN, DE, FR, IT, ES, PT, TR, AR, ZH, JA."},
-                {"role": "user", "content": json.dumps({"text": translate_text}, ensure_ascii=False)},
-            ],
-            response_format={"type": "json_object"},
+        payload = openai_json_completion(
+            model=os.getenv("OPENAI_TRANSLATION_MODEL", "gpt-5.6-terra"),
+            system_prompt="Detect the source language of this marketing copy. Return compact JSON only with key `language` as one of EN, DE, FR, IT, ES, PT, TR, AR, ZH, JA.",
+            payload={"text": translate_text},
+            timeout=20,
         )
-        payload = json.loads(response.choices[0].message.content or "{}")
         language = str(payload.get("language", "EN")).upper()
         return language if language in LANGUAGE_NAMES else "EN"
     except Exception:
@@ -3164,7 +3165,7 @@ def vertex_imagen_edit_model() -> str:
 
 
 def vertex_gemini_model() -> str:
-    return os.getenv("VERTEX_GEMINI_MODEL", os.getenv("ADAPTIFAI_VERTEX_GEMINI_MODEL", "gemini-2.5-pro")).strip() or "gemini-2.5-pro"
+    return os.getenv("VERTEX_GEMINI_MODEL", os.getenv("ADAPTIFAI_VERTEX_GEMINI_MODEL", "gemini-3.6-flash")).strip() or "gemini-3.6-flash"
 
 
 def vertex_available() -> bool:
@@ -3319,6 +3320,31 @@ def extract_json_object(text: str) -> dict[str, Any]:
     return {}
 
 
+def openai_json_completion(
+    *,
+    model: str,
+    system_prompt: str,
+    payload: dict[str, Any],
+    timeout: float = 55,
+) -> dict[str, Any]:
+    """Call an OpenAI JSON model with an explicit low-latency reasoning contract."""
+    client = OpenAI(timeout=timeout)
+    request: dict[str, Any] = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+        ],
+        "response_format": {"type": "json_object"},
+    }
+    if model.startswith("gpt-5.6"):
+        request["reasoning_effort"] = os.getenv("ADAPTIFAI_OPENAI_REASONING_EFFORT", "none")
+    else:
+        request["temperature"] = 0
+    response = client.chat.completions.create(**request)
+    return extract_json_object(response.choices[0].message.content or "{}")
+
+
 LANGUAGE_NAMES = {
     "EN": "English",
     "DE": "German",
@@ -3351,7 +3377,7 @@ def translate_with_gemini(blocks: list[TextBlock], languages: list[str]) -> dict
     if not api_key:
         return {language: source for language in languages}
 
-    model = os.getenv("GEMINI_TRANSLATION_MODEL", os.getenv("ADAPTIFAI_GEMINI_TRANSLATION_MODEL", "gemini-2.5-pro")).strip() or "gemini-2.5-pro"
+    model = os.getenv("GEMINI_TRANSLATION_MODEL", os.getenv("ADAPTIFAI_GEMINI_TRANSLATION_MODEL", "gemini-3.6-flash")).strip() or "gemini-3.6-flash"
     prompt = {
         "task": "Translate every source string into the requested target language as faithful marketing localization. Treat stacked words as one semantic copy block before translating. Preserve meaning, protected brand/product tokens, metric tokens, [BOLD] tags, style intent by semantic word/phrase meaning, and source line rhythm where natural. Return compact JSON only. Each key must be a requested language code and each value must be an array aligned to the input order.",
         "target_languages": {language: LANGUAGE_NAMES.get(language.upper(), language) for language in languages},
@@ -3395,23 +3421,17 @@ def translate_with_gpt4o(blocks: list[TextBlock], languages: list[str]) -> dict[
     if not os.getenv("OPENAI_API_KEY"):
         return translate_with_gemini(blocks, languages)
 
-    client = OpenAI()
     prompt = {
         "task": "Translate every source string into the requested target language as faithful marketing localization, not free transcreation. Treat each source string as one semantic copy block even when words are stacked on separate visual lines; first understand the full sentence/claim, then produce one coherent localized block. Preserve the exact meaning, claim scope, and emphasis. Do not add product names, SKU names, model names, brand names, or new claims that are not present in the source string. Only keep protected brand/product tokens unchanged when they are already present in that source string. Preserve [BOLD]...[/BOLD] tags exactly around the semantically emphasized phrase, even if that phrase moves to a different position in the target language. Preserve style intent by word/phrase meaning, not by absolute source position. Preserve the source line rhythm and line count when it can be done naturally; if the target language needs more characters, keep the same number of lines as much as possible by balancing words across those lines. Return one translated string per source string in the same order. Keep existing brand names, product names, packaging labels, URLs, QR references, Android TV, iPad Pro, H2O, Ask.NAOS.com, Dr.Scholl's and Scholl unchanged unless grammar absolutely requires surrounding words to change. Keep metric tokens exactly unchanged when they appear, including patterns like 24h, 48H, 84%, 88%, 2.4G+5G and Dual-Band. Translate surrounding claim language naturally but faithfully.",
         "target_languages": {language: LANGUAGE_NAMES.get(language.upper(), language) for language in languages},
         "strings": source,
     }
-    response = client.chat.completions.create(
-        model=os.getenv("OPENAI_TRANSLATION_MODEL", "gpt-4o"),
-        temperature=0.2,
-        messages=[
-            {"role": "system", "content": "You are a localization engine for ad creatives. Return compact JSON only. Each key must be a language code and each value must be an array of translated strings aligned to the input order. Translate into the actual requested language, not transliteration and not source-language copies."},
-            {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)},
-        ],
-        response_format={"type": "json_object"},
+    parsed = openai_json_completion(
+        model=os.getenv("OPENAI_TRANSLATION_MODEL", "gpt-5.6-terra"),
+        system_prompt="You are a localization engine for ad creatives. Return compact JSON only. Each key must be a language code and each value must be an array of translated strings aligned to the input order. Translate into the actual requested language, not transliteration and not source-language copies.",
+        payload=prompt,
+        timeout=55,
     )
-    content = response.choices[0].message.content or "{}"
-    parsed = json.loads(content)
     translations = {language: normalize_translation_list(parsed.get(language), source) for language in languages}
 
     for language in languages:
@@ -3438,17 +3458,12 @@ def translate_with_gpt4o(blocks: list[TextBlock], languages: list[str]) -> dict[
             "strings": [source[index] for index in unchanged_indexes],
         }
         try:
-            retry_response = client.chat.completions.create(
-                model=os.getenv("OPENAI_TRANSLATION_MODEL", "gpt-4o"),
-                temperature=0,
-                messages=[
-                    {"role": "system", "content": "You are a localization engine for ad creatives. Return compact JSON only."},
-                    {"role": "user", "content": json.dumps(retry_prompt, ensure_ascii=False)},
-                ],
-                response_format={"type": "json_object"},
+            retry_parsed = openai_json_completion(
+                model=os.getenv("OPENAI_TRANSLATION_MODEL", "gpt-5.6-terra"),
+                system_prompt="You are a localization engine for ad creatives. Return compact JSON only.",
+                payload=retry_prompt,
+                timeout=55,
             )
-            retry_content = retry_response.choices[0].message.content or "{}"
-            retry_parsed = json.loads(retry_content)
             retry_values = normalize_translation_list(retry_parsed.get("translations"), [source[index] for index in unchanged_indexes])
             for index, retry_value in zip(unchanged_indexes, retry_values, strict=False):
                 translations[language][index] = retry_value
@@ -12382,10 +12397,10 @@ def build_openai_smart_reframe_analysis(source: Image.Image, target_language: st
                 "\nPREVIOUS JSON FAILED BACKEND VALIDATION. Fix exactly this issue before returning JSON: "
                 f"{last_error}\n"
             ) if attempt and last_error else ""
-            response = client.chat.completions.create(
-                model=os.getenv("ADAPTIFAI_SMART_REFRAME_ANALYSIS_MODEL", os.getenv("OPENAI_TRANSLATION_MODEL", "gpt-4o")),
-                temperature=0,
-                messages=[
+            model = os.getenv("ADAPTIFAI_SMART_REFRAME_ANALYSIS_MODEL", "gpt-5.6-terra").strip() or "gpt-5.6-terra"
+            request: dict[str, Any] = {
+                "model": model,
+                "messages": [
                     {
                         "role": "system",
                         "content": _smart_reframe_analysis_prompt(target_language),
@@ -12402,11 +12417,16 @@ def build_openai_smart_reframe_analysis(source: Image.Image, target_language: st
                                     f"{feedback}"
                                 ),
                             },
-                            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{encoded}"}},
+                            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{encoded}", "detail": "high"}},
                         ],
                     },
                 ],
-                response_format={"type": "json_object"},
+                "response_format": {"type": "json_object"},
+            }
+            if model.startswith("gpt-5.6"):
+                request["reasoning_effort"] = os.getenv("ADAPTIFAI_OPENAI_REASONING_EFFORT", "none")
+            response = client.chat.completions.create(
+                **request,
             )
             payload = json.loads(response.choices[0].message.content or "{}")
             analysis = parse_visual_analysis_payload(payload)
@@ -12495,19 +12515,47 @@ def build_openrouter_smart_reframe_analysis(source: Image.Image, target_language
 
 
 def build_gemini_smart_reframe_analysis(source: Image.Image, target_language: str = "EN") -> VisualAnalysis | None:
-    api_key = google_gemini_api_key()
-    if not api_key:
-        return None
-
     provider = os.getenv("ADAPTIFAI_SMART_REFRAME_ANALYSIS_PROVIDER", "auto").strip().lower()
     if provider in {"heuristic", "local", "off", "disabled", "openai"}:
+        return None
+
+    last_error = ""
+    if vertex_available():
+        for attempt in range(2):
+            try:
+                feedback = (
+                    "PREVIOUS JSON FAILED BACKEND VALIDATION. Fix exactly this issue: " + last_error
+                    if attempt and last_error
+                    else ""
+                )
+                payload = generate_vertex_gemini_json(
+                    {
+                        "task": "Analyze product, person, logo, text, background and decorative layers for deterministic ad resizing.",
+                        "original_size": {"width": source.width, "height": source.height},
+                        "target_language": target_language,
+                        "schema_and_rules": _smart_reframe_analysis_prompt(target_language),
+                        "validation_feedback": feedback,
+                    },
+                    source,
+                    timeout=int(os.getenv("ADAPTIFAI_SMART_REFRAME_ANALYSIS_TIMEOUT", "35")),
+                )
+                analysis = parse_visual_analysis_payload(payload)
+                return _finalize_smart_reframe_analysis(analysis, source, "vertex-gemini")
+            except Exception as exc:
+                last_error = str(exc)[:320]
+                if attempt == 0:
+                    print(f"[smart_reframe_analysis] Vertex Gemini validation failed, retrying once: {last_error}", flush=True)
+        print(f"[smart_reframe_analysis] Vertex Gemini analysis failed after retry: {last_error}", flush=True)
+
+    api_key = google_gemini_api_key()
+    if not api_key:
         return None
 
     last_error = ""
     for attempt in range(2):
         try:
             _probe, encoded = _prepare_smart_reframe_probe(source)
-            model = os.getenv("GEMINI_VISUAL_ANALYSIS_MODEL", os.getenv("ADAPTIFAI_GEMINI_VISUAL_ANALYSIS_MODEL", "gemini-2.5-pro")).strip() or "gemini-2.5-pro"
+            model = os.getenv("GEMINI_VISUAL_ANALYSIS_MODEL", os.getenv("ADAPTIFAI_GEMINI_VISUAL_ANALYSIS_MODEL", "gemini-3.6-flash")).strip() or "gemini-3.6-flash"
             feedback = (
                 "\nPREVIOUS JSON FAILED BACKEND VALIDATION. Fix exactly this issue before returning JSON: "
                 f"{last_error}\n"
@@ -12642,12 +12690,12 @@ def build_heuristic_smart_reframe_analysis(source: Image.Image, focus_bbox: tupl
 
 def build_smart_reframe_analysis(source: Image.Image, focus_bbox: tuple[int, int, int, int] | None = None, target_language: str = "EN") -> VisualAnalysis:
     provider = os.getenv("ADAPTIFAI_SMART_REFRAME_ANALYSIS_PROVIDER", "auto").strip().lower()
-    openrouter_configured = bool(os.getenv("OPENROUTER_API_KEY", "").strip())
-    if provider == "auto" and openrouter_configured:
-        analysis = build_openrouter_smart_reframe_analysis(source, target_language)
+    if provider in {"auto", "gemini", "google", "vertex"}:
+        analysis = build_gemini_smart_reframe_analysis(source, target_language)
         if analysis is not None:
             return analysis
-        return build_heuristic_smart_reframe_analysis(source, focus_bbox, "openrouter_auto_strict_analysis_failed_fallback")
+        if provider in {"gemini", "google", "vertex"}:
+            provider = "auto"
     if provider in {"auto", "openai"}:
         analysis = build_openai_smart_reframe_analysis(source, target_language)
         if analysis is not None:
@@ -12660,12 +12708,6 @@ def build_smart_reframe_analysis(source: Image.Image, focus_bbox: tuple[int, int
             return analysis
         if provider == "openrouter":
             return build_heuristic_smart_reframe_analysis(source, focus_bbox, "openrouter_analysis_failed_fallback")
-    if provider in {"auto", "gemini", "google"}:
-        analysis = build_gemini_smart_reframe_analysis(source, target_language)
-        if analysis is not None:
-            return analysis
-        if provider in {"gemini", "google"}:
-            return build_heuristic_smart_reframe_analysis(source, focus_bbox, "gemini_analysis_failed_fallback")
     return build_heuristic_smart_reframe_analysis(source, focus_bbox)
 
 
@@ -14562,6 +14604,63 @@ def render_clean_base_outpaint_for_compositor(source: Image.Image, width: int, h
     raise RuntimeError("No outpaint provider is enabled for deterministic compositor.")
 
 
+def resize_aspect_family(width: int, height: int) -> str:
+    ratio = width / max(1, height)
+    if ratio < 0.84:
+        return "portrait"
+    if ratio > 1.20:
+        return "landscape"
+    return "square"
+
+
+def resize_aspect_family_master_size(width: int, height: int) -> tuple[int, int]:
+    family = resize_aspect_family(width, height)
+    long_edge = max(1536, width, height)
+    long_edge = min(long_edge, int(os.getenv("ADAPTIFAI_RESIZE_ASPECT_MASTER_MAX_SIDE", "2048")))
+    if family == "portrait":
+        return max(1024, int(round(long_edge * 0.75))), long_edge
+    if family == "landscape":
+        return long_edge, max(1024, int(round(long_edge * 0.75)))
+    return long_edge, long_edge
+
+
+def build_resize_aspect_family_outpaint_renderer() -> Callable[[Image.Image, int, int, Any, VisualAnalysis], tuple[Image.Image, dict[str, Any]]]:
+    cache: dict[str, tuple[Image.Image, dict[str, Any]]] = {}
+
+    def render(
+        source: Image.Image,
+        width: int,
+        height: int,
+        plan: Any,
+        analysis: VisualAnalysis,
+    ) -> tuple[Image.Image, dict[str, Any]]:
+        family = resize_aspect_family(width, height)
+        cached = cache.get(family)
+        if cached is None:
+            master_width, master_height = resize_aspect_family_master_size(width, height)
+            master, meta = render_clean_base_outpaint_for_compositor(
+                source,
+                master_width,
+                master_height,
+                plan,
+                analysis,
+            )
+            cached = (master.convert("RGB"), {**meta, "aspectFamily": family, "aspectFamilyMasterSize": [master_width, master_height]})
+            cache[family] = cached
+            cache_status = "miss-generated-master"
+        else:
+            cache_status = "hit-reused-master"
+        master, meta = cached
+        fitted = ImageOps.fit(master.convert("RGB"), (width, height), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
+        return fitted, {
+            **meta,
+            "aspectFamilyMasterCache": cache_status,
+            "aspectFamilyTargetSize": [width, height],
+        }
+
+    return render
+
+
 def render_smart_reframe_image(
     source: Image.Image,
     width: int,
@@ -14571,6 +14670,7 @@ def render_smart_reframe_image(
     *,
     allow_provider_outpaint: bool = True,
     allow_product_completion: bool = True,
+    outpaint_renderer: Callable[[Image.Image, int, int, Any, VisualAnalysis], tuple[Image.Image, dict[str, Any]]] | None = None,
 ) -> tuple[Image.Image, dict[str, Any]]:
     text_blocks = build_resize_compositor_text_blocks(source, width, height, plan, analysis)
     try:
@@ -14582,7 +14682,7 @@ def render_smart_reframe_image(
             analysis,
             text_blocks=text_blocks,
             draw_text=draw_fitted_localize_v2_text,
-            outpaint_renderer=render_clean_base_outpaint_for_compositor if allow_provider_outpaint else None,
+            outpaint_renderer=(outpaint_renderer or render_clean_base_outpaint_for_compositor) if allow_provider_outpaint else None,
             fallback_renderer=render_nonblur_contain_placeholder,
             product_completion_renderer=render_resize_product_asset_completion if allow_product_completion else None,
         )
@@ -15857,6 +15957,48 @@ def repair_missing_expressive_punctuation(payload: dict[str, Any], candidates: l
     return payload
 
 
+def run_localization_translation_qa(
+    payload: dict[str, Any],
+    candidates: list[TextBlock],
+    target_language: str,
+) -> dict[str, Any]:
+    if not os.getenv("OPENAI_API_KEY") or not env_flag("ADAPTIFAI_LOCALIZE_TRANSLATION_QA", "1"):
+        return {"available": False, "passed": True, "issues": []}
+    qa_model = os.getenv("ADAPTIFAI_LOCALIZE_QA_MODEL", "gpt-5.6-luna").strip() or "gpt-5.6-luna"
+    qa_payload = {
+        "task": "Audit localized advertising copy. Do not rewrite it. Return JSON with passed:boolean, risk_level:low|medium|high, and issues:[{id,reason}].",
+        "target_language": LANGUAGE_NAMES.get(target_language.upper(), target_language),
+        "source_blocks": [{"id": block.id, "text": block.text} for block in candidates],
+        "localized_blocks": payload.get("blocks", []),
+        "checks": [
+            "No source claim, qualifier, number, unit, duration, currency, brand, product or CTA meaning is lost or invented.",
+            "The target copy is natural advertising language rather than literal word-by-word translation.",
+            "Every source block id has a target and expressive punctuation is preserved.",
+            "Protected brand and product tokens remain exact while surrounding grammar is localized.",
+            "source_word_ids preserve semantic emphasis and do not reference another block.",
+        ],
+    }
+    try:
+        result = openai_json_completion(
+            model=qa_model,
+            system_prompt="You are a strict localization QA reviewer. Return compact JSON only and never rewrite the copy.",
+            payload=qa_payload,
+            timeout=float(os.getenv("ADAPTIFAI_LOCALIZE_QA_TIMEOUT", "35")),
+        )
+        issues = result.get("issues", []) if isinstance(result.get("issues"), list) else []
+        passed = bool(result.get("passed", not issues)) and not issues
+        return {
+            "available": True,
+            "model": qa_model,
+            "passed": passed,
+            "risk_level": str(result.get("risk_level") or ("low" if passed else "high")),
+            "issues": issues,
+        }
+    except Exception as exc:
+        print(f"[localize-v2.1.2] translation QA unavailable: {exc}", flush=True)
+        return {"available": False, "passed": True, "issues": [], "error": str(exc)[:240]}
+
+
 def analyze_localize_v212_ocr_translations(blocks: list[TextBlock], target_language: str) -> dict[str, Any]:
     candidates = [block for block in blocks if block.translate]
     prompt = {
@@ -15919,88 +16061,82 @@ def analyze_localize_v212_ocr_translations(blocks: list[TextBlock], target_langu
     }
     if not candidates:
         return {"analysis_provider": "deterministic-ocr", "blocks": []}
+
+    # Quality-first production route: Terra creates the structured localization,
+    # Luna audits it, and Sol is used only for failed deterministic/semantic gates.
+    try:
+        if os.getenv("OPENAI_API_KEY"):
+            primary_model = os.getenv("OPENAI_TRANSLATION_MODEL", "gpt-5.6-terra").strip() or "gpt-5.6-terra"
+            parsed = openai_json_completion(
+                model=primary_model,
+                system_prompt="You are a senior advertising localization engine. Return compact JSON only, preserve the requested schema, and never output coordinates.",
+                payload=prompt,
+                timeout=float(os.getenv("ADAPTIFAI_LOCALIZE_TRANSLATION_TIMEOUT", "55")),
+            )
+            if isinstance(parsed.get("blocks"), list):
+                parsed["analysis_provider"] = "openai-terra-v5-polygon-nm-style"
+                parsed = ensure_v212_translation_coverage(parsed, candidates, target_language)
+                deterministic_issues = [
+                    *missing_expressive_punctuation(parsed, candidates),
+                    *natural_language_violations(parsed, candidates, target_language),
+                ]
+                qa = run_localization_translation_qa(parsed, candidates, target_language)
+                if deterministic_issues or not qa.get("passed", True):
+                    escalation_model = os.getenv("ADAPTIFAI_LOCALIZE_ESCALATION_MODEL", "gpt-5.6-sol").strip() or "gpt-5.6-sol"
+                    escalation_prompt = {
+                        **prompt,
+                        "retry_reason": "The primary translation failed deterministic or semantic QA. Correct only the reported issues while preserving the schema and source_word_ids style mapping.",
+                        "previous_response": parsed,
+                        "deterministic_issues": deterministic_issues,
+                        "semantic_qa": qa,
+                    }
+                    escalated = openai_json_completion(
+                        model=escalation_model,
+                        system_prompt="You are the final localization authority. Fix the reported QA failures, return compact JSON only, preserve every claim and protected token, and never output coordinates.",
+                        payload=escalation_prompt,
+                        timeout=float(os.getenv("ADAPTIFAI_LOCALIZE_ESCALATION_TIMEOUT", "75")),
+                    )
+                    if isinstance(escalated.get("blocks"), list):
+                        escalated["analysis_provider"] = "openai-sol-v5-polygon-nm-style-escalation"
+                        parsed = ensure_v212_translation_coverage(escalated, candidates, target_language)
+                        parsed["translationQa"] = run_localization_translation_qa(parsed, candidates, target_language)
+                else:
+                    parsed["translationQa"] = qa
+                return finalize_v212_translation_payload(parsed, candidates, target_language)
+    except Exception as exc:
+        print(f"[localize-v2.1.2] OpenAI Terra localization failed: {exc}", flush=True)
+
+    # Independent provider fallback keeps localization available during an
+    # OpenAI outage without changing the deterministic render contract.
     try:
         if vertex_available():
             parsed = generate_vertex_gemini_json(prompt, timeout=int(os.getenv("VERTEX_GEMINI_TIMEOUT", "55")))
             if isinstance(parsed.get("blocks"), list):
-                parsed["analysis_provider"] = "vertex-gemini-v5-polygon-nm-style"
+                parsed["analysis_provider"] = "vertex-gemini-v5-polygon-nm-style-fallback"
                 parsed = ensure_v212_translation_coverage(parsed, candidates, target_language)
                 if missing_expressive_punctuation(parsed, candidates):
-                    retry_prompt = {**prompt, "retry_reason": "Previous response violated HARD punctuation preservation. Retry and preserve every source ! and ? in the target JSON."}
-                    retry = generate_vertex_gemini_json(retry_prompt, timeout=int(os.getenv("VERTEX_GEMINI_TIMEOUT", "55")))
+                    retry = generate_vertex_gemini_json(
+                        {**prompt, "retry_reason": "Dropped required expressive punctuation."},
+                        timeout=int(os.getenv("VERTEX_GEMINI_TIMEOUT", "55")),
+                    )
                     if isinstance(retry.get("blocks"), list):
-                        retry["analysis_provider"] = "vertex-gemini-v5-polygon-nm-style-retry-punctuation"
+                        retry["analysis_provider"] = "vertex-gemini-v5-polygon-retry-punctuation"
                         parsed = ensure_v212_translation_coverage(retry, candidates, target_language)
                 if natural_language_violations(parsed, candidates, target_language):
-                    retry_prompt = {
-                        **prompt,
-                        "retry_reason": "Previous response violated natural target-language wording. For Turkish, do not carry English articles such as 'a/an' into literal 'Bir ...' unless the meaning is numeric one, and do not keep '&' or spaced slash connectors when Turkish natural copy should use words. Rewrite naturally while preserving source_word_ids style mapping.",
-                        "previous_response": parsed,
-                    }
-                    retry = generate_vertex_gemini_json(retry_prompt, timeout=int(os.getenv("VERTEX_GEMINI_TIMEOUT", "55")))
+                    retry = generate_vertex_gemini_json(
+                        {
+                            **prompt,
+                            "retry_reason": "Fix literal target-language wording while preserving source_word_ids style mapping.",
+                            "previous_response": parsed,
+                        },
+                        timeout=int(os.getenv("VERTEX_GEMINI_TIMEOUT", "55")),
+                    )
                     if isinstance(retry.get("blocks"), list):
-                        retry["analysis_provider"] = "vertex-gemini-v5-polygon-nm-style-retry-natural-language"
+                        retry["analysis_provider"] = "vertex-gemini-v5-polygon-retry-natural-language"
                         parsed = ensure_v212_translation_coverage(retry, candidates, target_language)
                 return finalize_v212_translation_payload(parsed, candidates, target_language)
     except Exception as exc:
-        print(f"[localize-v2.1.2] Vertex Gemini OCR translation failed: {exc}", flush=True)
-    try:
-        if os.getenv("OPENAI_API_KEY"):
-            client = OpenAI()
-            response = client.chat.completions.create(
-                model=os.getenv("OPENAI_TRANSLATION_MODEL", "gpt-4o"),
-                temperature=0,
-                messages=[
-                    {"role": "system", "content": "You localize OCR text lines and return compact JSON only. Never output coordinates."},
-                    {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)},
-                ],
-                response_format={"type": "json_object"},
-            )
-            parsed = extract_json_object(response.choices[0].message.content or "{}")
-            if isinstance(parsed.get("blocks"), list):
-                parsed["analysis_provider"] = "openai-v5-polygon-nm-style-fallback"
-                parsed = ensure_v212_translation_coverage(parsed, candidates, target_language)
-                if missing_expressive_punctuation(parsed, candidates):
-                    response = client.chat.completions.create(
-                        model=os.getenv("OPENAI_TRANSLATION_MODEL", "gpt-4o"),
-                        temperature=0,
-                        messages=[
-                            {"role": "system", "content": "You localize OCR text and return compact JSON only. This is a retry: preserve every source ! and ? in the target."},
-                            {"role": "user", "content": json.dumps({**prompt, "retry_reason": "Dropped required expressive punctuation."}, ensure_ascii=False)},
-                        ],
-                        response_format={"type": "json_object"},
-                    )
-                    retry = extract_json_object(response.choices[0].message.content or "{}")
-                    if isinstance(retry.get("blocks"), list):
-                        retry["analysis_provider"] = "openai-text-ocr-layout-retry-punctuation"
-                        parsed = ensure_v212_translation_coverage(retry, candidates, target_language)
-                if natural_language_violations(parsed, candidates, target_language):
-                    response = client.chat.completions.create(
-                        model=os.getenv("OPENAI_TRANSLATION_MODEL", "gpt-4o"),
-                        temperature=0,
-                        messages=[
-                            {"role": "system", "content": "You localize OCR text and return compact JSON only. This is a retry: fix literal target-language wording while preserving source_word_ids style mapping."},
-                            {
-                                "role": "user",
-                                "content": json.dumps(
-                                    {
-                                        **prompt,
-                                        "retry_reason": "Previous response used literal Turkish wording such as 'Bir ...' for English 'a/an'. Rewrite as natural Turkish; omit 'Bir' unless the meaning is numeric one.",
-                                        "previous_response": parsed,
-                                    },
-                                    ensure_ascii=False,
-                                ),
-                            },
-                        ],
-                        response_format={"type": "json_object"},
-                    )
-                    retry = extract_json_object(response.choices[0].message.content or "{}")
-                    if isinstance(retry.get("blocks"), list):
-                        retry["analysis_provider"] = "openai-text-ocr-layout-retry-natural-language"
-                        parsed = ensure_v212_translation_coverage(retry, candidates, target_language)
-                return finalize_v212_translation_payload(parsed, candidates, target_language)
-    except Exception as exc:
-        print(f"[localize-v2.1.2] OpenAI OCR translation failed: {exc}", flush=True)
+        print(f"[localize-v2.1.2] Vertex Gemini localization fallback failed: {exc}", flush=True)
     return finalize_v212_translation_payload(
         ensure_v212_translation_coverage({"analysis_provider": "deterministic-ocr-fallback", "blocks": []}, candidates, target_language),
         candidates,
@@ -16869,8 +17005,21 @@ def inpaint_localize_v2_base(image: Image.Image, mask: Image.Image, blocks: list
             }
         scrubbed = scrub_provider_residuals_inside_mask(cleaned, image, mask)
         return polish_masked_cleanup_with_opencv(scrubbed, mask), {**meta, "maskedPolish": "opencv-telea", "residualScrub": "inside-character-mask"}
-    if is_v5_polygon_pipeline:
-        raise RuntimeError(f"V5 polygon localize requires Replicate LaMa cleanup; replicate failed: {LAST_REPLICATE_LAMA_ERROR or 'unknown'}")
+    openai_result = run_openai_localize_v2_cleanup(image, mask)
+    if openai_result is not None:
+        meta = {"provider": "openai", "model": os.getenv("ADAPTIFAI_OPENAI_IMAGE_MODEL", "gpt-image-2")}
+        if LAST_REPLICATE_LAMA_ERROR:
+            meta["replicateFallbackReason"] = LAST_REPLICATE_LAMA_ERROR
+        if blocks:
+            meta["splitCleanup"] = {"smallOverlayProvider": "local-fill", "largeOverlayProvider": "openai"}
+        cleaned = composite_provider_cleanup_over_source(image, openai_result, mask)
+        scrubbed = scrub_provider_residuals_inside_mask(cleaned, image, mask)
+        return polish_masked_cleanup_with_opencv(scrubbed, mask), {
+            **meta,
+            "maskedPolish": "opencv-telea",
+            "residualScrub": "inside-character-mask",
+            "localizationFallback": "replicate-lama-to-gpt-image-2",
+        }
     vertex_prompt = (
         "Remove only masked marketing text and reconstruct the original background faithfully. "
         "Do not add text. Preserve products, packaging, logos, arrows, labels, colors, gradients, and unmasked areas."
@@ -16886,16 +17035,6 @@ def inpaint_localize_v2_base(image: Image.Image, mask: Image.Image, blocks: list
         if blocks:
             meta["splitCleanup"] = {"smallOverlayProvider": "local-fill", "largeOverlayProvider": "vertex"}
         cleaned = composite_provider_cleanup_over_source(image, vertex_result["image"], mask)
-        scrubbed = scrub_provider_residuals_inside_mask(cleaned, image, mask)
-        return polish_masked_cleanup_with_opencv(scrubbed, mask), {**meta, "maskedPolish": "opencv-telea", "residualScrub": "inside-character-mask"}
-    openai_result = run_openai_localize_v2_cleanup(image, mask)
-    if openai_result is not None:
-        meta = {"provider": "openai", "model": os.getenv("ADAPTIFAI_OPENAI_IMAGE_MODEL", "gpt-image-2")}
-        if LAST_REPLICATE_LAMA_ERROR:
-            meta["replicateFallbackReason"] = LAST_REPLICATE_LAMA_ERROR
-        if blocks:
-            meta["splitCleanup"] = {"smallOverlayProvider": "local-fill", "largeOverlayProvider": "openai"}
-        cleaned = composite_provider_cleanup_over_source(image, openai_result, mask)
         scrubbed = scrub_provider_residuals_inside_mask(cleaned, image, mask)
         return polish_masked_cleanup_with_opencv(scrubbed, mask), {**meta, "maskedPolish": "opencv-telea", "residualScrub": "inside-character-mask"}
     import cv2
@@ -18641,8 +18780,7 @@ async def build_resize_assets(paths: list[Path], placement_ids: list[str], outpu
     resize_strategy = os.getenv("ADAPTIFAI_RESIZE_STRATEGY", "smart-reframe").strip().lower()
     smart_reframe_enabled = resize_strategy in {"smart-reframe", "smart", "reframe"}
     safe_resize_strategy = resize_strategy in {"blurred-fit", "fit", "contain-blur", "safe"}
-    max_provider_placements = max(1, int(os.getenv("ADAPTIFAI_RESIZE_MAX_PROVIDER_PLACEMENTS_PER_REQUEST", "2")))
-    allow_provider_outpaint = len(canonical_placement_ids) <= max_provider_placements
+    allow_provider_outpaint = env_flag("ADAPTIFAI_ENABLE_RESIZE_ASPECT_FAMILY_OUTPAINT", "1")
     parity_report = build_preview_template_parity_report(canonical_placement_ids)
     parity_report_filename = "previewTemplateParityReport.json"
     (job_dir / parity_report_filename).write_text(json.dumps(parity_report, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -18672,6 +18810,7 @@ async def build_resize_assets(paths: list[Path], placement_ids: list[str], outpu
                 "focus_bbox": focus_bbox,
                 "visual_analysis": visual_analysis,
                 "reframe_plans": reframe_plans,
+                "aspect_outpaint_renderer": build_resize_aspect_family_outpaint_renderer(),
             }
         )
 
@@ -18692,11 +18831,13 @@ async def build_resize_assets(paths: list[Path], placement_ids: list[str], outpu
                     source_entry["visual_analysis"],
                     allow_provider_outpaint=allow_provider_outpaint,
                     allow_product_completion=True,
+                    outpaint_renderer=source_entry["aspect_outpaint_renderer"],
                 )
                 render_meta = {
                     **render_meta,
                     "providerOutpaintAllowedForRequest": allow_provider_outpaint,
-                    "providerOutpaintPlacementLimit": max_provider_placements,
+                    "providerOutpaintStrategy": "one-master-per-source-and-aspect-family",
+                    "providerOutpaintFamilyLimit": 3,
                     "requestPlacementCount": len(canonical_placement_ids),
                 }
                 print(
@@ -19132,7 +19273,13 @@ def health() -> dict[str, str]:
         "inpainting_backend": os.getenv("ADAPTIFAI_INPAINT_BACKEND", "stable-diffusion"),
         "inpainting": os.getenv("ADAPTIFAI_INPAINT_MODEL", "runwayml/stable-diffusion-inpainting"),
         "resize_fit": os.getenv("ADAPTIFAI_RESIZE_FIT", "cover"),
+        "localize_translation_model": os.getenv("OPENAI_TRANSLATION_MODEL", "gpt-5.6-terra"),
+        "localize_qa_model": os.getenv("ADAPTIFAI_LOCALIZE_QA_MODEL", "gpt-5.6-luna"),
+        "localize_escalation_model": os.getenv("ADAPTIFAI_LOCALIZE_ESCALATION_MODEL", "gpt-5.6-sol"),
+        "openai_image_model": os.getenv("ADAPTIFAI_OPENAI_IMAGE_MODEL", "gpt-image-2"),
+        "vertex_gemini_model": vertex_gemini_model(),
         "smart_reframe_analysis_provider": os.getenv("ADAPTIFAI_SMART_REFRAME_ANALYSIS_PROVIDER", "auto"),
+        "smart_reframe_analysis_fallback_model": os.getenv("ADAPTIFAI_SMART_REFRAME_ANALYSIS_MODEL", "gpt-5.6-terra"),
         "openrouter_configured": "true" if bool(os.getenv("OPENROUTER_API_KEY", "").strip()) else "false",
         "openrouter_smart_reframe_model": (
             os.getenv("ADAPTIFAI_OPENROUTER_SMART_REFRAME_MODEL")
@@ -19142,6 +19289,8 @@ def health() -> dict[str, str]:
         ),
         "resize_ai_layout_provider": os.getenv("ADAPTIFAI_RESIZE_AI_LAYOUT_PROVIDER", "auto"),
         "resize_ai_layout_planner": os.getenv("ADAPTIFAI_RESIZE_AI_LAYOUT_PLANNER", "1"),
+        "resize_ai_layout_model": os.getenv("ADAPTIFAI_RESIZE_AI_LAYOUT_MODEL", "gpt-5.6-luna"),
+        "resize_outpaint_strategy": "aspect-family-master" if env_flag("ADAPTIFAI_ENABLE_RESIZE_ASPECT_FAMILY_OUTPAINT", "1") else "per-placement",
         "replicate_lama_configured": "true" if bool(os.getenv("REPLICATE_API_TOKEN", "").strip()) else "false",
         "replicate_lama_model": resolved_replicate_lama_model(),
     }

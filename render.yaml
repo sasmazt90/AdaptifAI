@@ -15,7 +15,15 @@ services:
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENAI_TRANSLATION_MODEL
-        value: gpt-4o
+        value: gpt-5.6-terra
+      - key: ADAPTIFAI_LOCALIZE_QA_MODEL
+        value: gpt-5.6-luna
+      - key: ADAPTIFAI_LOCALIZE_ESCALATION_MODEL
+        value: gpt-5.6-sol
+      - key: ADAPTIFAI_LOCALIZE_TRANSLATION_QA
+        value: "1"
+      - key: ADAPTIFAI_OPENAI_REASONING_EFFORT
+        value: none
       - key: ADAPTIFAI_OPENAI_IMAGE_MODEL
         value: gpt-image-2
       - key: ADAPTIFAI_OPENAI_IMAGE_QUALITY
@@ -33,7 +41,7 @@ services:
       - key: VERTEX_AI_LOCATION
         value: us-central1
       - key: VERTEX_GEMINI_MODEL
-        value: gemini-2.5-pro
+        value: gemini-3.6-flash
       - key: VERTEX_GEMINI_TIMEOUT
         value: "120"
       - key: VERTEX_IMAGEN_EDIT_MODEL
@@ -46,14 +54,26 @@ services:
         value: "20"
       - key: ADAPTIFAI_ENABLE_VERTEX_OUTPAINT
         value: "1"
+      - key: ADAPTIFAI_ENABLE_OPENAI_OUTPAINT
+        value: "1"
+      - key: ADAPTIFAI_ENABLE_RESIZE_ASPECT_FAMILY_OUTPAINT
+        value: "1"
       - key: ADAPTIFAI_SMART_REFRAME_ANALYSIS_PROVIDER
         value: auto
       - key: ADAPTIFAI_SMART_REFRAME_ANALYSIS_MODEL
-        value: gpt-4o
+        value: gpt-5.6-terra
       - key: ADAPTIFAI_SMART_REFRAME_ANALYSIS_MAX_SIDE
         value: "1600"
       - key: ADAPTIFAI_SMART_REFRAME_ANALYSIS_TIMEOUT
-        value: "12"
+        value: "35"
+      - key: ADAPTIFAI_RESIZE_AI_LAYOUT_PROVIDER
+        value: openai
+      - key: ADAPTIFAI_RESIZE_AI_LAYOUT_MODEL
+        value: gpt-5.6-luna
+      - key: ADAPTIFAI_RESIZE_AI_LAYOUT_TIMEOUT
+        value: "20"
+      - key: REPLICATE_PRODUCT_CUTOUT_FALLBACK_MODELS
+        value: recraft-ai/recraft-remove-background,lucataco/remove-bg
       - key: ADAPTIFAI_RESIZE_FOCUS_OCR
         value: "0"
       - key: ADAPTIFAI_TROCR_MODEL

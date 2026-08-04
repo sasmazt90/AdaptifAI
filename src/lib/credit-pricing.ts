@@ -43,12 +43,13 @@ export function estimateLocalizeCredits({ fileCount, languageCount, outputFormat
 export function estimateResizeCredits({ fileCount, dimensionCount, outputFormat }: EstimateResizeCreditsInput) {
   const files = positiveCount(fileCount);
   const dimensions = positiveCount(dimensionCount);
+  const generatedImages = files * dimensions;
   const formatCost = outputFormat.toLowerCase() === "pdf"
-    ? dimensions * creditPricing.resizePdfOutput
+    ? generatedImages * creditPricing.resizePdfOutput
     : creditPricing.resizeOutputFormat;
 
   return files * creditPricing.resizeImage
-    + dimensions * creditPricing.resizeDimension
+    + generatedImages * creditPricing.resizeDimension
     + formatCost;
 }
 

@@ -1538,20 +1538,20 @@ export function AdaptDashboard() {
     : estimateResizeCredits({ fileCount: files.length, dimensionCount: selectedPlacementIds.length, outputFormat: selectedFormat });
   const editCredits = estimateEditCredits(mode);
   const generatedLocalizeCount = files.length * selectedLanguages.length;
+  const generatedResizeCount = files.length * selectedPlacementIds.length;
   const outputFormatCost = selectedFormat.toLowerCase() === "pdf";
-  const outputUnitCount = files.length;
   const receiptLines: ReceiptLine[] = result
     ? [{ label: "Modify edit", formula: `1 x ${formatCreditText(editCredits)}`, credits: editCredits }]
     : mode === "adapt"
       ? [
         { label: "Files", formula: `${files.length} x ${formatCreditText(creditPricing.localizeImage)}`, credits: files.length * creditPricing.localizeImage },
         { label: "Languages", formula: `${generatedLocalizeCount} x ${formatCreditText(creditPricing.localizeLanguagePerGeneratedImage)}`, credits: generatedLocalizeCount * creditPricing.localizeLanguagePerGeneratedImage },
-        { label: "Output", formula: outputFormatCost ? `${outputUnitCount} x ${formatCreditText(creditPricing.localizePdfOutput)}` : `${outputUnitCount} x ${formatCreditText(creditPricing.localizeOutputFormat)}`, credits: files.length === 0 ? 0 : outputFormatCost ? outputUnitCount * creditPricing.localizePdfOutput : outputUnitCount * creditPricing.localizeOutputFormat },
+        { label: "Output", formula: outputFormatCost ? `${generatedLocalizeCount} x ${formatCreditText(creditPricing.localizePdfOutput)}` : `1 x ${formatCreditText(creditPricing.localizeOutputFormat)}`, credits: files.length === 0 ? 0 : outputFormatCost ? generatedLocalizeCount * creditPricing.localizePdfOutput : creditPricing.localizeOutputFormat },
       ]
       : [
         { label: "Files", formula: `${files.length} x ${formatCreditText(creditPricing.resizeImage)}`, credits: files.length * creditPricing.resizeImage },
-        { label: "Placements", formula: `${selectedPlacementIds.length} x ${formatCreditText(creditPricing.resizeDimension)}`, credits: files.length === 0 ? 0 : selectedPlacementIds.length * creditPricing.resizeDimension },
-        { label: "Output", formula: outputFormatCost ? `${outputUnitCount} x ${formatCreditText(creditPricing.resizePdfOutput)}` : `${outputUnitCount} x ${formatCreditText(creditPricing.resizeOutputFormat)}`, credits: files.length === 0 ? 0 : outputFormatCost ? outputUnitCount * creditPricing.resizePdfOutput : outputUnitCount * creditPricing.resizeOutputFormat },
+        { label: "Placements", formula: `${generatedResizeCount} x ${formatCreditText(creditPricing.resizeDimension)}`, credits: files.length === 0 ? 0 : generatedResizeCount * creditPricing.resizeDimension },
+        { label: "Output", formula: outputFormatCost ? `${generatedResizeCount} x ${formatCreditText(creditPricing.resizePdfOutput)}` : `1 x ${formatCreditText(creditPricing.resizeOutputFormat)}`, credits: files.length === 0 ? 0 : outputFormatCost ? generatedResizeCount * creditPricing.resizePdfOutput : creditPricing.resizeOutputFormat },
       ];
   const actionCredits = result ? editCredits : receiptLines.reduce((sum, line) => sum + line.credits, 0);
   const remainingAfterAction = credits - actionCredits;
