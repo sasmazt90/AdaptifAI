@@ -16,12 +16,16 @@ describe("estimateLocalizeCredits", () => {
 });
 
 describe("estimateResizeCredits", () => {
-  it("charges per source image, selected dimension, and non-PDF output format", () => {
-    expect(estimateResizeCredits({ fileCount: 2, dimensionCount: 3, outputFormat: "WebP" })).toBe(14);
+  it("charges every generated source-image and placement pair", () => {
+    expect(estimateResizeCredits({ fileCount: 2, dimensionCount: 3, outputFormat: "WebP" })).toBe(20);
   });
 
-  it("charges PDF output per selected dimension", () => {
-    expect(estimateResizeCredits({ fileCount: 2, dimensionCount: 3, outputFormat: "PDF" })).toBe(21);
+  it("charges PDF output per generated resize image", () => {
+    expect(estimateResizeCredits({ fileCount: 2, dimensionCount: 3, outputFormat: "PDF" })).toBe(36);
+  });
+
+  it("scales multi-file multi-placement jobs with output count", () => {
+    expect(estimateResizeCredits({ fileCount: 10, dimensionCount: 3, outputFormat: "PNG" })).toBe(92);
   });
 
   it("clamps zero and negative resize counts to one billable unit", () => {

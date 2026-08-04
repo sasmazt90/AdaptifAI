@@ -122,7 +122,7 @@ def _replicate_product_cutout(crop: Image.Image) -> tuple[Image.Image | None, di
     ).strip()
     fallback_models = [
         item.strip()
-        for item in os.getenv("REPLICATE_PRODUCT_CUTOUT_FALLBACK_MODELS", "lucataco/remove-bg,recraft-ai/recraft-remove-background").split(",")
+        for item in os.getenv("REPLICATE_PRODUCT_CUTOUT_FALLBACK_MODELS", "recraft-ai/recraft-remove-background,lucataco/remove-bg").split(",")
         if item.strip()
     ]
     models = []
@@ -4281,10 +4281,10 @@ def _request_ai_creative_director_plan(
             or os.getenv("ADAPTIFAI_OPENROUTER_MODEL")
             or os.getenv("OPENROUTER_MODEL")
             or "google/gemini-2.5-flash"
-        ).strip() if use_openrouter else os.getenv("ADAPTIFAI_RESIZE_AI_LAYOUT_MODEL", os.getenv("OPENAI_TRANSLATION_MODEL", "gpt-4o-mini"))
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
+        ).strip() if use_openrouter else os.getenv("ADAPTIFAI_RESIZE_AI_LAYOUT_MODEL", "gpt-5.6-luna")
+        request: dict[str, Any] = {
+            "model": model,
+            "messages": [
                 {
                     "role": "system",
                     "content": (
@@ -4306,8 +4306,11 @@ def _request_ai_creative_director_plan(
                     ),
                 },
             ],
-            response_format={"type": "json_object"},
-        )
+            "response_format": {"type": "json_object"},
+        }
+        if str(model).startswith("gpt-5.6"):
+            request["reasoning_effort"] = os.getenv("ADAPTIFAI_OPENAI_REASONING_EFFORT", "none")
+        response = client.chat.completions.create(**request)
         import json
 
         raw = json.loads(response.choices[0].message.content or "{}")
